@@ -1,0 +1,398 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  OWNER
+  ADMIN
+  OPERATOR
+  VIEWER
+}
+
+enum AccountType {
+  MERCHANT
+  CONSUMER
+}
+
+enum StoreConnectionStatus {
+  PENDING
+  SYNCING
+  CONNECTED
+  FAILED
+}
+
+enum OpportunityStatus {
+  DISCOVERED
+  ANALYZING
+  PROPOSED
+  SIMULATED
+  GUARDRAIL_REJECTED
+  APPROVAL_REQUIRED
+  APPROVED
+  ACTIVE
+  COMPLETED
+  REJECTED
+  FAILED
+}
+
+enum OpportunityType {
+  UPSELL
+  CROSS_SELL
+  BUNDLE
+  REACTIVATION
+  CAMPAIGN
+}
+
+enum OrderStatus {
+  CREATED
+  PENDING
+  PAID
+  FAILED
+  CANCELLED
+}
+
+enum TransactionStatus {
+  CREATED
+  AUTHORIZED
+  CAPTURED
+  FAILED
+  REFUNDED
+  UNKNOWN
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+enum CampaignStatus {
+  DRAFT
+  PENDING_APPROVAL
+  ACTIVE
+  PAUSED
+  COMPLETED
+  FAILED
+}
+
+enum AgentRunStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum ActorType {
+  USER
+  AI_AGENT
+  SYSTEM
+  RAZORPAY
+}
+
+model Merchant {
+  id                 String       @id @default(cuid())
+  name               String
+  email              String       @unique
+  razorpayAccountId  String?
+  currency           String       @default("INR")
+  timezone           String       @default("Asia/Kolkata")
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+  users              User[]
+  products           Product[]
+  customers          Customer[]
+  orders             Order[]
+  transactions       Transaction[]
+  opportunities      Opportunity[]
+  agentRuns          AgentRun[]
+  campaigns          Campaign[]
+  policy             Policy?
+  auditLogs          AuditLog[]
+  webhookEvents      WebhookEvent[]
+  operations         Operation[]
+  storeConnections   StoreConnection[]
+}
+
+model User {
+  id         String   @id @default(cuid())
+  merchantId String?
+  name       String
+  email      String
+  accountType AccountType @default(MERCHANT)
+  image      String?
+  emailVerifiedAt DateTime?
+  onboardingComplete Boolean @default(false)
+  onboardingContext Json?
+  role       UserRole @default(VIEWER)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  merchant   Merchant? @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  approvals  Approval[] @relation("requestedApprovals")
+  approved   Approval[] @relation("resolvedApprovals")
+  @@unique([merchantId, email])
+  @@index([merchantId, role])
+}
+
+model StoreConnection {
+  id            String   @id @default(cuid())
+  merchantId    String
+  url           String
+  domain        String
+  status        StoreConnectionStatus @default(PENDING)
+  lastSyncedAt  DateTime?
+  lastError     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  merchant      Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  @@unique([merchantId, url])
+  @@index([merchantId, status])
+}
+
+model Product {
+  id          String   @id @default(cuid())
+  merchantId  String
+  sku         String
+  name        String
+  description String?
+  category    String
+  price       Int
+  cost        Int
+  stock       Int
+  active      Boolean  @default(true)
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  merchant    Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  orderItems  OrderItem[]
+  @@unique([merchantId, sku])
+  @@index([merchantId, active])
+}
+
+model Customer {
+  id           String   @id @default(cuid())
+  merchantId   String
+  name         String
+  email        String?
+  phone        String?
+  segment      String
+  lifetimeValue Int     @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  merchant     Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  orders       Order[]
+  @@index([merchantId, segment])
+}
+
+model Order {
+  id              String      @id @default(cuid())
+  merchantId      String
+  customerId      String?
+  razorpayOrderId String?
+  amount          Int
+  currency        String      @default("INR")
+  status          OrderStatus @default(CREATED)
+  source          String
+  operationId     String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  merchant        Merchant    @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  customer        Customer?   @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  items           OrderItem[]
+  transaction     Transaction?
+  @@unique([merchantId, operationId])
+  @@unique([merchantId, razorpayOrderId])
+  @@index([merchantId, status, createdAt])
+}
+
+model OrderItem {
+  id        String  @id @default(cuid())
+  orderId   String
+  productId String
+  quantity  Int
+  unitPrice Int
+  total     Int
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product   Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+  @@index([orderId])
+  @@index([productId])
+}
+
+model Transaction {
+  id                String            @id @default(cuid())
+  merchantId        String
+  orderId           String            @unique
+  razorpayPaymentId String?
+  amount            Int
+  currency          String            @default("INR")
+  status            TransactionStatus @default(CREATED)
+  verified          Boolean           @default(false)
+  failureReason     String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  merchant          Merchant          @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  order             Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  @@unique([merchantId, razorpayPaymentId])
+  @@index([merchantId, status])
+}
+
+model Opportunity {
+  id              String             @id @default(cuid())
+  merchantId      String
+  type            OpportunityType
+  title           String
+  description     String
+  confidence      Int
+  expectedRevenue Int
+  expectedLift    Int
+  riskScore       Int
+  marginImpact    Int
+  status          OpportunityStatus  @default(DISCOVERED)
+  evidence        Json
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  merchant        Merchant           @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  actions         AgentAction[]
+  @@index([merchantId, status, createdAt])
+}
+
+model AgentRun {
+  id          String          @id @default(cuid())
+  merchantId  String
+  trigger     String
+  status      AgentRunStatus @default(RUNNING)
+  startedAt   DateTime       @default(now())
+  completedAt DateTime?
+  input       Json?
+  output      Json?
+  error       String?
+  merchant    Merchant       @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  actions     AgentAction[]
+  @@index([merchantId, status, startedAt])
+}
+
+model AgentAction {
+  id            String      @id @default(cuid())
+  agentRunId    String
+  opportunityId String?
+  actionType    String
+  input         Json
+  output        Json?
+  status        String
+  riskLevel     String
+  operationId   String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  agentRun      AgentRun    @relation(fields: [agentRunId], references: [id], onDelete: Cascade)
+  opportunity   Opportunity? @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  approval      Approval?
+  @@index([agentRunId])
+  @@index([operationId])
+}
+
+model Approval {
+  id          String         @id @default(cuid())
+  actionId    String         @unique
+  requestedBy String
+  approvedBy  String?
+  status      ApprovalStatus @default(PENDING)
+  reason      String?
+  createdAt   DateTime       @default(now())
+  resolvedAt  DateTime?
+  action      AgentAction    @relation(fields: [actionId], references: [id], onDelete: Cascade)
+  requester   User           @relation("requestedApprovals", fields: [requestedBy], references: [id])
+  resolver    User?          @relation("resolvedApprovals", fields: [approvedBy], references: [id])
+}
+
+model Campaign {
+  id              String         @id @default(cuid())
+  merchantId      String
+  name            String
+  type            String
+  audience        Json
+  budget          Int
+  discount        Int
+  status          CampaignStatus @default(DRAFT)
+  expectedRevenue Int
+  actualRevenue   Int             @default(0)
+  startedAt       DateTime?
+  endedAt         DateTime?
+  merchant        Merchant       @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  @@index([merchantId, status])
+}
+
+model Policy {
+  id                    String   @id @default(cuid())
+  merchantId            String   @unique
+  maxDiscountPercent    Int      @default(10)
+  maxCampaignBudget     Int      @default(500000)
+  maxSingleTransaction  Int      @default(1000000)
+  requireApprovalAbove  Int      @default(100000)
+  minimumMarginPercent  Int      @default(15)
+  autoApprovalEnabled   Boolean  @default(false)
+  recommendationsEnabled Boolean  @default(true)
+  crossSellEnabled       Boolean  @default(true)
+  upsellEnabled          Boolean  @default(true)
+  conversationsEnabled   Boolean  @default(true)
+  negotiationEnabled     Boolean  @default(false)
+  campaignRecommendationsEnabled Boolean @default(true)
+  allowedActions        Json
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  merchant              Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id              String    @id @default(cuid())
+  merchantId      String
+  actorType       ActorType
+  actorId         String?
+  action          String
+  resourceType    String
+  resourceId      String?
+  reason          String?
+  input           Json?
+  output          Json?
+  policyResult    Json?
+  approvalResult  Json?
+  executionResult Json?
+  ipAddress       String?
+  userAgent       String?
+  createdAt       DateTime  @default(now())
+  merchant        Merchant  @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  @@index([merchantId, createdAt])
+  @@index([merchantId, resourceType, resourceId])
+}
+
+model WebhookEvent {
+  id                String   @id @default(cuid())
+  merchantId        String?
+  eventId           String   @unique
+  eventType         String
+  payload           Json
+  signatureVerified Boolean
+  processed         Boolean  @default(false)
+  processedAt       DateTime?
+  createdAt         DateTime @default(now())
+  merchant          Merchant? @relation(fields: [merchantId], references: [id], onDelete: SetNull)
+  @@index([merchantId, processed])
+}
+
+model Operation {
+  id            String   @id @default(cuid())
+  merchantId    String
+  operationId   String
+  operationType String
+  status        String
+  requestHash   String
+  response      Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  merchant      Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  @@unique([merchantId, operationId])
+  @@index([merchantId, operationType, status])
+}
