@@ -1,8 +1,12 @@
 ﻿import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getPrisma } from "@/lib/db";
+import { resolveMerchant } from "@/lib/resolve-merchant";
 import { groqChat } from "@/ai/llm/groq-client";
 import { groqConfigured } from "@/ai/llm/model-config";
+import type { OpportunityType, Prisma } from "@prisma/client";
+
+const VALID_OPPORTUNITY_TYPES: OpportunityType[] = ["UPSELL", "CROSS_SELL", "BUNDLE", "REACTIVATION", "CAMPAIGN", "BUYER_DEMAND_MATCH"];
 
 export async function POST() {
   try {
@@ -37,10 +41,10 @@ export async function POST() {
     }
 
     // Get merchant
-    const merchant = await prisma.merchant.findFirst({
-      where: { users: { some: { id: session.userId || "" } } },
-      select: { id: true, name: true, email: true },
-    });
+    const resolved = await resolveMerchant(prisma, session);
+    const merchant = resolved
+      ? await prisma.merchant.findUnique({ where: { id: resolved.id }, select: { id: true, name: true, email: true } })
+      : null;
 
     if (!merchant) {
       return NextResponse.json(
@@ -119,14 +123,11 @@ Return ONLY valid JSON array with this structure:
   }
 ]`;
 
-    const aiResponse = await groqChat({
-      messages: [{ role: "user", content: analysisPrompt }],
-      temperature: 0.7,
-    });
+    const aiResponse = await groqChat([{ role: "user", content: analysisPrompt }], []);
 
     // Parse AI response
     let opportunities: unknown[] = [];
-    const responseText = aiResponse.content || "";
+    const responseText = aiResponse.message.content || "";
 
     // Extract JSON from response
     const jsonMatch = responseText.match(/\[[\s\S]*\]/);
@@ -143,11 +144,12 @@ Return ONLY valid JSON array with this structure:
     const createdOpportunities = [];
     for (const opp of opportunities) {
       const oppData = opp as Record<string, unknown>;
+      const requestedType = oppData.type as OpportunityType;
       try {
         const created = await prisma.opportunity.create({
           data: {
             merchantId: merchant.id,
-            type: (oppData.type as string) || "CAMPAIGN",
+            type: VALID_OPPORTUNITY_TYPES.includes(requestedType) ? requestedType : "CAMPAIGN",
             title: (oppData.title as string) || "Opportunity",
             description: (oppData.description as string) || "",
             confidence: (oppData.confidence as number) || 50,
@@ -155,7 +157,7 @@ Return ONLY valid JSON array with this structure:
             expectedLift: (oppData.expectedLift as number) || 0,
             riskScore: (oppData.riskScore as number) || 50,
             marginImpact: Math.round(((oppData.marginImpact as number) || 0) * 100),
-            evidence: (oppData.evidence as Record<string, unknown>) || {},
+            evidence: ((oppData.evidence as Record<string, unknown>) || {}) as Prisma.InputJsonValue,
             status: "DISCOVERED",
           },
         });

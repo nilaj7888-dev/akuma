@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getPrisma } from "@/lib/db";
 import { dashboardMetrics } from "@/lib/domain";
+import { resolveMerchant } from "@/lib/resolve-merchant";
+
+const PAID_STATUSES = ["PAID", "CONFIRMED", "COMPLETED"] as const;
 
 export async function GET() {
 	const session = await getSession();
@@ -9,14 +12,12 @@ export async function GET() {
 	if (session.accountType !== "MERCHANT") return NextResponse.json({ error: { code: "AKUMA_FORBIDDEN", message: "Merchant dashboard only." } }, { status: 403 });
 	const prisma = getPrisma();
 	if (prisma) {
-		// Find merchant by username (email in this system)
-		const merchant = await prisma.merchant.findUnique({ where: { email: session.username } });
+		const merchant = await resolveMerchant(prisma, session);
 		if (!merchant) return NextResponse.json({ totalRevenue: 0, orders: 0, customers: 0, opportunities: 0, influencedRevenue: 0, actionsExecuted: 0, conversionLift: 0, recentOrders: [] });
 
-		const [revenue, orderCount, paidOrders, customers, opportunities, campaigns, recentOrders] = await Promise.all([
-			prisma.order.aggregate({ where: { merchantId: merchant.id, status: "PAID" }, _sum: { amount: true } }),
+		const [revenue, orderCount, customers, opportunities, campaigns, recentOrders] = await Promise.all([
+			prisma.order.aggregate({ where: { merchantId: merchant.id, status: { in: [...PAID_STATUSES] } }, _sum: { amount: true } }),
 			prisma.order.count({ where: { merchantId: merchant.id } }),
-			prisma.order.findMany({ where: { merchantId: merchant.id, status: "PAID" }, orderBy: { createdAt: "desc" }, take: 5, select: { id: true, amount: true, status: true, createdAt: true } }),
 			prisma.customer.count({ where: { merchantId: merchant.id } }),
 			prisma.opportunity.count({ where: { merchantId: merchant.id } }),
 			prisma.campaign.aggregate({ where: { merchantId: merchant.id }, _sum: { actualRevenue: true } }),

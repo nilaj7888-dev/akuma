@@ -47,8 +47,8 @@ const manualAddressSchema = z.object({
   contactConsent: z.boolean().optional(),
 });
 
-function findComponent(components: Array<{ long_name: string; short_name: string; types: string[] }>, type: string): string | undefined {
-  return components.find((c) => c.types.includes(type))?.long_name;
+function findComponent(components: Array<{ longText: string; types: string[] }>, type: string): string | undefined {
+  return components.find((c) => c.types.includes(type))?.longText;
 }
 
 // POST /api/consumer/addresses - save a delivery address, either geocoded via a Google Place ID
@@ -105,25 +105,22 @@ export async function POST(request: Request) {
   if (!googleApiKey) return NextResponse.json({ error: { code: "AKUMA_MAPS_NOT_CONFIGURED", message: "Google API not configured." } }, { status: 503 });
 
   try {
-    const response = await fetch(
-      `https://maps.googleapis.com/maps/api/place/details/json?place_id=${parsed.data.placeId}&fields=formatted_address,geometry,address_component&key=${googleApiKey}&sessiontoken=${parsed.data.sessionToken || ""}`,
-      { signal: AbortSignal.timeout(5000) }
-    );
-    const data = await response.json() as {
-      result?: {
-        formatted_address: string;
-        geometry: { location: { lat: number; lng: number } };
-        address_components: Array<{ long_name: string; short_name: string; types: string[] }>;
-      };
+    const response = await fetch(`https://places.googleapis.com/v1/places/${parsed.data.placeId}`, {
+      headers: { "X-Goog-Api-Key": googleApiKey, "X-Goog-FieldMask": "formattedAddress,location,addressComponents" },
+      signal: AbortSignal.timeout(5000),
+    });
+
+    if (!response.ok) return NextResponse.json({ error: { code: "AKUMA_PLACE_NOT_FOUND", message: "Couldn't look up that address. You can enter it manually instead." } }, { status: 404 });
+
+    const result = await response.json() as {
+      formattedAddress: string;
+      location: { latitude: number; longitude: number };
+      addressComponents: Array<{ longText: string; types: string[] }>;
     };
-
-    if (!data.result) return NextResponse.json({ error: { code: "AKUMA_PLACE_NOT_FOUND", message: "Couldn't look up that address. You can enter it manually instead." } }, { status: 404 });
-
-    const { result } = data;
-    const components = result.address_components || [];
+    const components = result.addressComponents || [];
     const streetNumber = findComponent(components, "street_number");
     const route = findComponent(components, "route");
-    const addressLine1 = [streetNumber, route].filter(Boolean).join(" ") || result.formatted_address.split(",")[0];
+    const addressLine1 = [streetNumber, route].filter(Boolean).join(" ") || result.formattedAddress.split(",")[0];
     const city = findComponent(components, "locality") || findComponent(components, "administrative_area_level_2") || "";
     const state = findComponent(components, "administrative_area_level_1") || "";
     const postalCode = findComponent(components, "postal_code") || "";
@@ -143,8 +140,8 @@ export async function POST(request: Request) {
         city,
         state,
         country,
-        latitude: result.geometry.location.lat,
-        longitude: result.geometry.location.lng,
+        latitude: result.location.latitude,
+        longitude: result.location.longitude,
         placeId: parsed.data.placeId,
         contactConsent: parsed.data.contactConsent ?? false,
       },
@@ -158,8 +155,8 @@ export async function POST(request: Request) {
         state,
         postalCode,
         country,
-        latitude: result.geometry.location.lat,
-        longitude: result.geometry.location.lng,
+        latitude: result.location.latitude,
+        longitude: result.location.longitude,
         placeId: parsed.data.placeId,
         isDefault: existingCount === 0,
         contactConsent: parsed.data.contactConsent ?? false,

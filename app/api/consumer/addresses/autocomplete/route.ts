@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 
-// GET /api/consumer/addresses/autocomplete?q=... - Google Places autocomplete for delivery address entry
+// GET /api/consumer/addresses/autocomplete?q=... - Google Places autocomplete (New) for delivery address entry
 export async function GET(request: Request) {
   const session = await getSession();
   if (!session || !session.userId) return NextResponse.json({ error: { code: "AKUMA_UNAUTHORIZED", message: "Sign in required." } }, { status: 401 });
@@ -9,7 +9,6 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const query = searchParams.get("q");
-  const sessionToken = searchParams.get("sessionToken");
 
   if (!query || query.length < 2) return NextResponse.json({ predictions: [] });
 
@@ -17,12 +16,19 @@ export async function GET(request: Request) {
   if (!googleApiKey) return NextResponse.json({ error: { code: "AKUMA_MAPS_NOT_CONFIGURED", message: "Google API not configured." } }, { status: 503 });
 
   try {
-    const response = await fetch(
-      `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(query)}&key=${googleApiKey}&sessiontoken=${sessionToken || ""}&components=country:in`,
-      { signal: AbortSignal.timeout(5000) }
-    );
-    const data = await response.json() as { predictions: Array<{ place_id: string; description: string }> };
-    return NextResponse.json({ predictions: data.predictions || [] });
+    const response = await fetch("https://places.googleapis.com/v1/places:autocomplete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Goog-Api-Key": googleApiKey },
+      body: JSON.stringify({ input: query, includedRegionCodes: ["in"] }),
+      signal: AbortSignal.timeout(5000),
+    });
+    const data = await response.json() as {
+      suggestions?: Array<{ placePrediction?: { placeId: string; text: { text: string } } }>;
+    };
+    const predictions = (data.suggestions || [])
+      .filter((s) => s.placePrediction)
+      .map((s) => ({ place_id: s.placePrediction!.placeId, description: s.placePrediction!.text.text }));
+    return NextResponse.json({ predictions });
   } catch {
     return NextResponse.json({ error: { code: "AKUMA_PLACES_ERROR", message: "Failed to fetch predictions." } }, { status: 500 });
   }

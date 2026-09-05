@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getPrisma } from "@/lib/db";
+import { resolveMerchant } from "@/lib/resolve-merchant";
+import type { NegotiationStatus, Prisma } from "@prisma/client";
 
 export async function GET() {
   try {
@@ -18,10 +20,15 @@ export async function GET() {
     }
 
     // Get active negotiations based on account type
-    const whereClause =
-      session.accountType === "MERCHANT"
-        ? { merchantId: session.userId || session.username, status: { in: ["OPEN", "CUSTOMER_OFFER", "MERCHANT_COUNTER"] } }
-        : { userId: session.userId || session.username, status: { in: ["OPEN", "CUSTOMER_OFFER", "MERCHANT_COUNTER"] } };
+    const activeStatuses: NegotiationStatus[] = ["OPEN", "CUSTOMER_OFFER", "MERCHANT_COUNTER"];
+    let whereClause: Prisma.NegotiationWhereInput;
+    if (session.accountType === "MERCHANT") {
+      const merchant = await resolveMerchant(prisma, session);
+      if (!merchant) return NextResponse.json([], { status: 200 });
+      whereClause = { merchantId: merchant.id, status: { in: activeStatuses } };
+    } else {
+      whereClause = { userId: session.userId || session.username, status: { in: activeStatuses } };
+    }
 
     const negotiations = await prisma.negotiation.findMany({
       where: whereClause,

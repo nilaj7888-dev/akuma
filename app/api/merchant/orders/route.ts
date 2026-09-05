@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getPrisma } from "@/lib/db";
+import { resolveMerchant } from "@/lib/resolve-merchant";
 import { z } from "zod";
 
 const ordersQuerySchema = z.object({
@@ -22,12 +23,9 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: { code: "AKUMA_DATABASE_REQUIRED", message: "PostgreSQL is required." } }, { status: 503 });
 
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: session.userId },
-      select: { merchantId: true },
-    });
+    const merchant = await resolveMerchant(prisma, session);
 
-    if (!user || !user.merchantId)
+    if (!merchant)
       return NextResponse.json({ error: { code: "AKUMA_MERCHANT_NOT_FOUND", message: "Merchant not found." } }, { status: 404 });
 
     const url = new URL(request.url);
@@ -42,7 +40,7 @@ export async function GET(request: Request) {
 
     const { status, limit, offset } = parsed.data;
 
-    const where: any = { merchantId: user.merchantId };
+    const where: any = { merchantId: merchant.id };
     if (status) where.status = status;
 
     const [orders, total] = await Promise.all([

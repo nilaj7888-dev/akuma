@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getPrisma } from "@/lib/db";
+import { resolveMerchant } from "@/lib/resolve-merchant";
 import { z } from "zod";
 
 const notificationQuerySchema = z.object({
@@ -23,13 +24,9 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: { code: "AKUMA_DATABASE_REQUIRED", message: "PostgreSQL is required." } }, { status: 503 });
 
   try {
-    // Get merchant ID from authenticated user
-    const user = await prisma.user.findUnique({
-      where: { id: session.userId },
-      select: { merchantId: true },
-    });
+    const merchant = await resolveMerchant(prisma, session);
 
-    if (!user || !user.merchantId)
+    if (!merchant)
       return NextResponse.json({ error: { code: "AKUMA_MERCHANT_NOT_FOUND", message: "Merchant not found." } }, { status: 404 });
 
     // Parse query params
@@ -47,7 +44,7 @@ export async function GET(request: Request) {
     const { unreadOnly, type, limit, offset } = parsed.data;
 
     // Build where clause
-    const where: any = { merchantId: user.merchantId };
+    const where: any = { merchantId: merchant.id };
     if (unreadOnly) where.read = false;
     if (type) where.type = type;
 
@@ -64,7 +61,7 @@ export async function GET(request: Request) {
 
     // Get unread count
     const unreadCount = await prisma.notification.count({
-      where: { merchantId: user.merchantId, read: false },
+      where: { merchantId: merchant.id, read: false },
     });
 
     return NextResponse.json({

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getPrisma } from "@/lib/db";
+import { resolveMerchant } from "@/lib/resolve-merchant";
 import { haversineDistanceKm, estimateDeliveryCostPaise } from "@/lib/geo";
 
 // GET /api/merchant/orders/[id] - get order details
@@ -17,17 +18,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
   try {
     const resolvedParams = await params;
-    const user = await prisma.user.findUnique({
-      where: { id: session.userId },
-      select: { merchantId: true },
-    });
+    const resolvedMerchant = await resolveMerchant(prisma, session);
 
-    if (!user || !user.merchantId)
+    if (!resolvedMerchant)
       return NextResponse.json({ error: { code: "AKUMA_MERCHANT_NOT_FOUND", message: "Merchant not found." } }, { status: 404 });
 
     const merchant = await prisma.merchant.findUnique({
-      where: { id: user.merchantId },
-      select: { latitude: true, longitude: true },
+      where: { id: resolvedMerchant.id },
+      select: { id: true, latitude: true, longitude: true },
     });
 
     const order = await prisma.order.findUnique({
@@ -43,7 +41,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     if (!order)
       return NextResponse.json({ error: { code: "AKUMA_NOT_FOUND", message: "Order not found." } }, { status: 404 });
 
-    if (order.merchantId !== user.merchantId)
+    if (order.merchantId !== merchant?.id)
       return NextResponse.json({ error: { code: "AKUMA_FORBIDDEN", message: "Cannot access this order." } }, { status: 403 });
 
     // Only compute an estimate when both the merchant and the delivery address

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getPrisma } from "@/lib/db";
+import { resolveMerchant } from "@/lib/resolve-merchant";
 
 export async function GET() {
   const session = await getSession();
@@ -9,22 +10,24 @@ export async function GET() {
   const prisma = getPrisma();
   if (!prisma) return NextResponse.json({ error: { code: "AKUMA_DATABASE_REQUIRED", message: "PostgreSQL is required." } }, { status: 503 });
 
-  // Find the merchant associated with the session
-  const merchant = await prisma.merchant.findFirst({
-    where: { users: { some: { id: session.userId || "" } } },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      phone: true,
-      location: true,
-      latitude: true,
-      longitude: true,
-      deliveryRadius: true,
-      currency: true,
-      timezone: true,
-    },
-  });
+  const resolved = await resolveMerchant(prisma, session);
+  const merchant = resolved
+    ? await prisma.merchant.findUnique({
+        where: { id: resolved.id },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          phone: true,
+          location: true,
+          latitude: true,
+          longitude: true,
+          deliveryRadius: true,
+          currency: true,
+          timezone: true,
+        },
+      })
+    : null;
 
   if (!merchant) {
     return NextResponse.json({ error: { code: "AKUMA_MERCHANT_NOT_FOUND", message: "Merchant profile not found." } }, { status: 404 });
@@ -43,10 +46,7 @@ export async function PATCH(request: Request) {
   const body = await request.json();
   const { name, phone, location, deliveryRadius } = body;
 
-  // Find the merchant associated with the session
-  const merchant = await prisma.merchant.findFirst({
-    where: { users: { some: { id: session.userId || "" } } },
-  });
+  const merchant = await resolveMerchant(prisma, session);
 
   if (!merchant) {
     return NextResponse.json({ error: { code: "AKUMA_MERCHANT_NOT_FOUND", message: "Merchant profile not found." } }, { status: 404 });

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getPrisma } from "@/lib/db";
+import { resolveMerchant } from "@/lib/resolve-merchant";
 import { z } from "zod";
 
 const negotiationResponseSchema = z.object({
@@ -18,17 +19,13 @@ export async function GET() {
   const prisma = getPrisma();
   if (!prisma) return NextResponse.json({ error: { code: "AKUMA_DATABASE_REQUIRED", message: "PostgreSQL is required." } }, { status: 503 });
 
-  // Get merchant ID from authenticated user
-  const user = await prisma.user.findUnique({
-    where: { id: session.userId },
-    select: { merchantId: true },
-  });
+  const merchant = await resolveMerchant(prisma, session);
 
-  if (!user || !user.merchantId) return NextResponse.json({ error: { code: "AKUMA_MERCHANT_NOT_FOUND", message: "Merchant not found." } }, { status: 404 });
+  if (!merchant) return NextResponse.json({ error: { code: "AKUMA_MERCHANT_NOT_FOUND", message: "Merchant not found." } }, { status: 404 });
 
   const negotiations = await prisma.negotiation.findMany({
     where: {
-      merchantId: user.merchantId,
+      merchantId: merchant.id,
       status: { in: ["OPEN", "CUSTOMER_OFFER", "AI_COUNTER"] },
     },
     orderBy: { createdAt: "desc" },
@@ -43,7 +40,7 @@ export async function GET() {
 
   // Get policy
   const policy = await prisma.policy.findUnique({
-    where: { merchantId: user.merchantId },
+    where: { merchantId: merchant.id },
   });
 
   return NextResponse.json({
