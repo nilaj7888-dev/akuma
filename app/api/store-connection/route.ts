@@ -22,7 +22,10 @@ export async function GET() {
   if (!session) return NextResponse.json({ error: { code: "AKUMA_UNAUTHORIZED", message: "Sign in required." } }, { status: 401 });
   const prisma = getPrisma();
   if (!prisma) return NextResponse.json({ error: { code: "AKUMA_DATABASE_REQUIRED", message: "Connect PostgreSQL before connecting a store." } }, { status: 503 });
-  const merchant = await prisma.merchant.findUnique({ where: { email: "demo@nova-electronics.test" } });
+
+  // Find merchant by userId
+  const user = await prisma.user.findUnique({ where: { id: session.userId || "" } });
+  const merchant = user ? await prisma.merchant.findUnique({ where: { id: user.merchantId || "" } }) : null;
   if (!merchant) return NextResponse.json([]);
   return NextResponse.json(await prisma.storeConnection.findMany({ where: { merchantId: merchant.id }, orderBy: { createdAt: "desc" } }));
 }
@@ -36,7 +39,10 @@ export async function POST(request: Request) {
   if (!/^https?:$/.test(target.protocol) || blockedHosts.has(target.hostname) || target.username || target.password) return NextResponse.json({ error: { code: "AKUMA_INVALID_STORE_URL", message: "This store URL cannot be fetched safely." } }, { status: 400 });
   const prisma = getPrisma();
   if (!prisma) return NextResponse.json({ error: { code: "AKUMA_DATABASE_REQUIRED", message: "Connect PostgreSQL before connecting a store." } }, { status: 503 });
-  const merchant = await prisma.merchant.findUnique({ where: { email: "demo@nova-electronics.test" } });
+
+  // Find merchant by userId
+  const user = await prisma.user.findUnique({ where: { id: session.userId || "" } });
+  const merchant = user ? await prisma.merchant.findUnique({ where: { id: user.merchantId || "" } }) : null;
   if (!merchant) return NextResponse.json({ error: { code: "AKUMA_MERCHANT_NOT_FOUND", message: "Merchant workspace is not configured." } }, { status: 404 });
   const connection = await prisma.storeConnection.upsert({ where: { merchantId_url: { merchantId: merchant.id, url: target.toString() } }, update: { status: "SYNCING", lastError: null }, create: { merchantId: merchant.id, url: target.toString(), domain: target.hostname, status: "SYNCING" } });
   try {

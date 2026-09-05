@@ -63,12 +63,12 @@ Without `DATABASE_URL` or Razorpay credentials, AKUMA deliberately uses its loca
 
 The local fallback is a deterministic demo so AKUMA runs without credentials or external services. The checkout surface is explicitly labelled **Razorpay Test Mode**, but the current checkout route uses local payment simulation; no live money moves and no external Razorpay API response is represented as real.
 
-## Local AI
+## AI
 
-AKUMA’s conversational agent uses Ollama server-side. Install Ollama, pull a tool-capable model, and set `OLLAMA_BASE_URL` and `OLLAMA_MODEL` in `.env`. The dashboard agent is available at `/agent`; when Ollama is unavailable it reports **AI offline** and returns no fabricated response.
+AKUMA’s conversational agent, negotiation, and tone rewriting run on [Groq](https://console.groq.com/keys) server-side. Set `GROQ_API_KEY` in `.env.local`; `GROQ_MODEL` (default `llama-3.1-8b-instant`) handles reasoning and tool calling, and `GROQ_FAST_MODEL` (default `llama-3.1-8b-instant`) is the cheaper model used for short tone rewrites. The dashboard agent is available at `/agent`; without a key it falls back to deterministic tool-only answers and returns no fabricated response. Tone rewriting is exposed at `POST /api/ai/rewrite` and never alters the numbers in a message — if the model does, the original text is returned unchanged.
 
 ```bash
-ollama pull qwen3
+npm install groq-sdk
 ```
 
 ## Demo flow

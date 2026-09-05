@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
-import { createSession, verifyDemoCredentials } from "@/lib/auth";
 
 export async function POST(request: Request) {
-  const body = await request.json().catch(() => ({})) as { username?: string; password?: string };
-  if (!body.username || !body.password || !verifyDemoCredentials(body.username.trim(), body.password)) {
-    return NextResponse.json({ error: { code: "AKUMA_UNAUTHORIZED", message: "Invalid demo credentials." } }, { status: 401 });
-  }
-  await createSession();
-  return NextResponse.json({ user: { name: "Nilaj", username: "nilaj123", role: "OWNER" } });
+  // Demo login removed - use email OTP authentication instead
+  // Users should register via /auth/phone?role=MERCHANT or /auth/phone?role=CONSUMER
+  return NextResponse.json({
+    error: {
+      code: "AKUMA_AUTH_DEPRECATED",
+      message: "Please use email OTP authentication. Visit the homepage to register."
+    }
+  }, { status: 400 });
 }

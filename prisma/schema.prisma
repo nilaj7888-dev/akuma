@@ -45,6 +45,7 @@ enum OpportunityType {
   BUNDLE
   REACTIVATION
   CAMPAIGN
+  BUYER_DEMAND_MATCH // When a new product matches existing buyer demand/interest
 }
 
 enum OrderStatus {
@@ -53,6 +54,12 @@ enum OrderStatus {
   PAID
   FAILED
   CANCELLED
+  AWAITING_MERCHANT_CONFIRMATION
+  NEGOTIATION
+  CONFIRMED
+  PAYMENT_PENDING
+  PROCESSING
+  COMPLETED
 }
 
 enum TransactionStatus {
@@ -94,13 +101,44 @@ enum ActorType {
   RAZORPAY
 }
 
+enum GoalType {
+  REVENUE
+  ORDERS
+  CUSTOMERS
+  AVERAGE_ORDER_VALUE
+  CUSTOMER_LIFETIME_VALUE
+  PROFIT_MARGIN
+}
+
+enum GoalStatus {
+  ACTIVE
+  PAUSED
+  ACHIEVED
+  FAILED
+  CANCELLED
+}
+
+enum ExperimentStatus {
+  DRAFT
+  RUNNING
+  COMPLETED
+  CANCELLED
+}
+
 model Merchant {
   id                 String       @id @default(cuid())
   name               String
   email              String       @unique
+  phone              String?
   razorpayAccountId  String?
   currency           String       @default("INR")
   timezone           String       @default("Asia/Kolkata")
+  // Location data for delivery matching
+  location           String?      // Formatted address
+  latitude           Float?
+  longitude          Float?
+  placeId            String?      // Google Places ID
+  deliveryRadius     String?      // "local_pickup", "5km", "15km", "nationwide"
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
   users              User[]
@@ -116,26 +154,40 @@ model Merchant {
   webhookEvents      WebhookEvent[]
   operations         Operation[]
   storeConnections   StoreConnection[]
+  goals              Goal[]
+  experiments        Experiment[]
+  buyerInterests     BuyerInterest[]
+  notifications      Notification[]
+  notificationPreferences NotificationPreference[]
+  reviews            Review[]
+  negotiations       Negotiation[]
 }
 
 model User {
   id         String   @id @default(cuid())
   merchantId String?
   name       String
-  email      String
+  email      String?   @unique
+  phone      String?
+  phoneVerified Boolean @default(false)
   accountType AccountType @default(MERCHANT)
   image      String?
   emailVerifiedAt DateTime?
   onboardingComplete Boolean @default(false)
   onboardingContext Json?
   role       UserRole @default(VIEWER)
+  smsConsent Boolean @default(false)
+  marketingSmsConsent Boolean @default(false)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
   merchant   Merchant? @relation(fields: [merchantId], references: [id], onDelete: Cascade)
   approvals  Approval[] @relation("requestedApprovals")
   approved   Approval[] @relation("resolvedApprovals")
+  buyerInterests BuyerInterest[]
+  negotiations Negotiation[]
   @@unique([merchantId, email])
   @@index([merchantId, role])
+  @@index([phone])
 }
 
 model StoreConnection {
@@ -164,13 +216,52 @@ model Product {
   cost        Int
   stock       Int
   active      Boolean  @default(true)
+  imageUrl    String?  // Product image URL (stored in public/uploads or external storage)
   metadata    Json?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   merchant    Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
   orderItems  OrderItem[]
+  buyerInterests BuyerInterest[]
+  reviews     Review[]
+  wishlist    Wishlist[]
+  negotiations Negotiation[]
+  avgRating   Float    @default(0)
+  totalReviews Int     @default(0)
   @@unique([merchantId, sku])
   @@index([merchantId, active])
+}
+
+enum ReviewRating {
+  ONE
+  TWO
+  THREE
+  FOUR
+  FIVE
+}
+
+model Review {
+  id          String       @id @default(cuid())
+  productId   String
+  consumerId  String       // User ID from Consumer account
+  merchantId  String
+  rating      ReviewRating
+  title       String?
+  comment     String?
+  images      String[]     @default([])
+  verified    Boolean      @default(false) // Verified purchase
+  helpful     Int          @default(0)
+  notHelpful  Int          @default(0)
+  response    String?      @default("") // Merchant response
+  respondedAt DateTime?
+  status      String       @default("PUBLISHED") // PUBLISHED, FLAGGED, REMOVED
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  product     Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  merchant    Merchant     @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  @@index([productId, status])
+  @@index([consumerId, createdAt])
+  @@index([merchantId, status])
 }
 
 model Customer {
@@ -192,21 +283,28 @@ model Order {
   id              String      @id @default(cuid())
   merchantId      String
   customerId      String?
+  consumerId      String?     // Consumer user ID for consumer orders
   razorpayOrderId String?
   amount          Int
   currency        String      @default("INR")
   status          OrderStatus @default(CREATED)
   source          String
   operationId     String?
+  buyerInterestId String?     @unique // If order came from buyer interest
+  deliveryAddressId String?   // Consumer delivery address (for distance-based delivery cost)
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
   merchant        Merchant    @relation(fields: [merchantId], references: [id], onDelete: Cascade)
   customer        Customer?   @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  deliveryAddress DeliveryAddress? @relation(fields: [deliveryAddressId], references: [id], onDelete: SetNull)
   items           OrderItem[]
   transaction     Transaction?
   @@unique([merchantId, operationId])
   @@unique([merchantId, razorpayOrderId])
   @@index([merchantId, status, createdAt])
+  @@index([consumerId, createdAt])
+  @@index([buyerInterestId])
+  @@index([deliveryAddressId])
 }
 
 model OrderItem {
@@ -339,7 +437,9 @@ model Policy {
   upsellEnabled          Boolean  @default(true)
   conversationsEnabled   Boolean  @default(true)
   negotiationEnabled     Boolean  @default(false)
+  negotiationPreference  String   @default("ASK_ME_FIRST") // YES_AUTOMATICALLY, ASK_ME_FIRST, NO_NEGOTIATION
   campaignRecommendationsEnabled Boolean @default(true)
+  primaryGoal           String   @default("INCREASE_REVENUE") // ACQUIRE_CUSTOMERS, INCREASE_REVENUE, INCREASE_AOV, IMPROVE_PROFIT, RETAIN_CUSTOMERS, CLEAR_INVENTORY
   allowedActions        Json
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
@@ -395,4 +495,316 @@ model Operation {
   merchant      Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
   @@unique([merchantId, operationId])
   @@index([merchantId, operationType, status])
+}
+
+model Conversation {
+  id            String   @id @default(cuid())
+  userId        String
+  merchantId    String?
+  accountType   AccountType
+  context       Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  messages      ConversationMessage[]
+  @@index([userId, createdAt])
+  @@index([merchantId, createdAt])
+}
+
+model ConversationMessage {
+  id             String   @id @default(cuid())
+  conversationId String
+  role           String
+  content        String
+  toolActivity   Json?
+  createdAt      DateTime @default(now())
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  @@index([conversationId, createdAt])
+}
+
+model Goal {
+  id          String     @id @default(cuid())
+  merchantId  String
+  merchant    Merchant   @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  type        GoalType
+  name        String
+  description String?
+  targetValue Int        // Target value (e.g., 100000 for ₹1,00,000 revenue)
+  currentValue Int       @default(0)
+  unit        String     @default("INR") // INR, UNITS, PERCENTAGE, etc.
+  startDate   DateTime
+  endDate     DateTime
+  status      GoalStatus @default(ACTIVE)
+  priority    Int        @default(0)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  @@index([merchantId, status, endDate])
+}
+
+model Experiment {
+  id          String              @id @default(cuid())
+  merchantId  String
+  merchant    Merchant            @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  campaignId  String?
+  name        String
+  description String?
+  status      ExperimentStatus    @default(DRAFT)
+  variants    ExperimentVariant[]
+  winnerId    String?
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  @@index([merchantId, status, createdAt])
+}
+
+model ExperimentVariant {
+  id           String     @id @default(cuid())
+  experimentId String
+  experiment   Experiment @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  name         String     // "A", "B", "C"
+  config       Json       // Variant configuration (discount, message, etc.)
+  impressions  Int        @default(0)
+  conversions  Int        @default(0)
+  revenue      Int        @default(0)
+  createdAt    DateTime   @default(now())
+  @@index([experimentId])
+}
+
+model ConsumerProfile {
+  id                String   @id @default(cuid())
+  userId            String   @unique
+  phone             String?
+  preferences       Json?    // Shopping preferences (priority, condition, etc.)
+  orderContactConsent Boolean @default(false)
+  marketingConsent  Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  deliveryAddresses DeliveryAddress[]
+  @@index([userId])
+}
+
+model DeliveryAddress {
+  id              String   @id @default(cuid())
+  profileId       String
+  name            String
+  phone           String
+  addressLine1    String
+  addressLine2    String?
+  city            String
+  state           String
+  postalCode      String
+  country         String   @default("India")
+  latitude        Float?
+  longitude       Float?
+  placeId         String?  // Google Places ID
+  isDefault       Boolean  @default(false)
+  contactConsent  Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  profile         ConsumerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  orders          Order[]
+  @@index([profileId])
+  @@unique([profileId, addressLine1, postalCode])
+}
+
+model Wishlist {
+  id          String   @id @default(cuid())
+  userId      String
+  productId   String
+  name        String?  // Optional custom name for the item
+  note        String?  // Personal note
+  alertPrice  Int?     // Price alert threshold
+  alertActive Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  @@unique([userId, productId])
+  @@index([userId])
+  @@index([productId])
+}
+
+enum ShoppingMode {
+  RETAIL
+  BULK
+}
+
+enum BuyerInterestStatus {
+  OPEN
+  REVIEWING
+  OFFER_MADE
+  ACCEPTED
+  REJECTED
+  EXPIRED
+  CONVERTED_TO_ORDER
+}
+
+model ShoppingSession {
+  id              String       @id @default(cuid())
+  userId          String
+  mode            ShoppingMode @default(RETAIL)
+  budget          Int?
+  quantity        Int?
+  requirements    Json?        // Structured requirements gathered from conversation
+  context         Json?        // Conversation context
+  items           CartItem[]
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  @@index([userId, createdAt])
+}
+
+model CartItem {
+  id          String          @id @default(cuid())
+  sessionId   String
+  productId   String
+  quantity    Int
+  addedAt     DateTime        @default(now())
+  session     ShoppingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  @@index([sessionId])
+  @@unique([sessionId, productId])
+}
+
+enum NegotiationStatus {
+  OPEN
+  CUSTOMER_OFFER
+  AI_COUNTER
+  MERCHANT_APPROVAL_REQUIRED
+  MERCHANT_COUNTER
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+// Email-based negotiation audit actions
+enum AuditAction {
+  OFFER_CREATED
+  OFFER_ACCEPTED
+  OFFER_REJECTED
+  COUNTER_OFFERED
+  PAYMENT_COMPLETED
+}
+
+model Negotiation {
+  id                String             @id @default(cuid())
+  userId            String
+  merchantId        String
+  productId         String
+  quantity          Int
+  originalPrice     Int                // Listed price per unit in paise
+  requestedPrice    Int?               // Customer's requested price per unit
+  approvedPrice     Int?               // Final negotiated price per unit
+  status            NegotiationStatus  @default(OPEN)
+  merchantApprovalRequired Boolean     @default(false)
+  approverUserId    String?
+  actionToken       String?            @unique // Secure token for email actions
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  messages          Json?              // Shared chat messages: [{role, content, timestamp}]
+
+  // Relations
+  product           Product            @relation(fields: [productId], references: [id], onDelete: Cascade)
+  merchant          Merchant           @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  auditLogs         NegotiationAudit[]
+
+  @@index([userId, status])
+  @@index([merchantId, status])
+  @@index([actionToken])
+}
+
+// Audit trail for negotiation actions (email-based)
+model NegotiationAudit {
+  id             String      @id @default(cuid())
+  negotiationId  String
+  action         AuditAction
+  actor          String      // "BUYER", "MERCHANT", "SYSTEM"
+  price          Int         // Price in paise at time of action
+  metadata       Json?       // Additional context (e.g., counter price, rejection reason)
+  timestamp      DateTime    @default(now())
+
+  // Relation
+  negotiation    Negotiation @relation(fields: [negotiationId], references: [id], onDelete: Cascade)
+
+  @@index([negotiationId, timestamp])
+}
+
+model BuyerInterest {
+  id               String             @id @default(cuid())
+  userId           String
+  merchantId       String
+  productId        String
+  quantity         Int                @default(1)
+  preferredPrice   Int?               // Buyer's preferred price in paise
+  requirements     Json?              // Additional buyer requirements
+  status           BuyerInterestStatus @default(OPEN)
+  merchantSeen     Boolean            @default(false)
+  merchantSeenAt   DateTime?
+  notificationPinned Boolean           @default(false)
+  notificationPinnedAt DateTime?
+  merchantResponse String?            // Merchant's initial response/notes
+  merchantCounterPrice Int?           // Merchant's counter offer in paise
+  acceptedPrice    Int?               // Final accepted price in paise
+  acceptedDeliveryAddressId String?   // Delivery address used for order
+  convertedToOrder Boolean           @default(false)
+  orderId          String?            @unique // Created order ID if converted
+  expiresAt        DateTime?          // When interest expires
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  user             User              @relation(fields: [userId], references: [id])
+  merchant         Merchant          @relation(fields: [merchantId], references: [id])
+  product          Product           @relation(fields: [productId], references: [id])
+
+  @@index([userId, status, createdAt])
+  @@index([merchantId, status, notificationPinned])
+  @@index([merchantId, notificationPinned, merchantSeen])
+  @@index([productId, status])
+}
+
+enum NotificationType {
+  BUYER_INTEREST_NEW
+  BUYER_INTEREST_ACCEPTED
+  ORDER_CREATED
+  ORDER_SHIPPED
+  ORDER_DELIVERED
+  PAYMENT_RECEIVED
+  LOW_STOCK
+  REVIEW_POSTED
+  MESSAGE_RECEIVED
+}
+
+model Notification {
+  id              String   @id @default(cuid())
+  merchantId      String
+  type            NotificationType
+  title           String
+  message         String
+  resourceType    String   // "BuyerInterest", "Order", "Product", etc.
+  resourceId      String   // ID of the related resource
+  read            Boolean  @default(false)
+  readAt          DateTime?
+  actionUrl       String?  // Link to take action (e.g., /dashboard/buyer-interests/xxx)
+  metadata        Json?    // Additional context
+  createdAt       DateTime @default(now())
+  merchant        Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  @@index([merchantId, read, createdAt])
+  @@index([merchantId, type, createdAt])
+  @@index([merchantId, resourceType, resourceId])
+}
+
+model NotificationPreference {
+  id                String   @id @default(cuid())
+  merchantId        String
+  type              NotificationType
+  enabled           Boolean  @default(true)
+  push              Boolean  @default(false) // Push notifications
+  email             Boolean  @default(false) // Email notifications
+  sms               Boolean  @default(false) // SMS notifications
+  threshold         Int?     // For LOW_STOCK, minimum stock threshold
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  merchant          Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  @@unique([merchantId, type])
+  @@index([merchantId, enabled])
 }

@@ -21,9 +21,18 @@ export async function GET(request: Request) {
     if (!profileResponse.ok) throw new Error("Google profile lookup failed");
     const profile = await profileResponse.json() as { sub?: string; email?: string; name?: string; picture?: string; email_verified?: boolean };
     if (!profile.sub || !profile.email) throw new Error("Google profile is incomplete");
+    const userId = `google_${profile.sub}`;
     const prisma = getPrisma();
-    if (prisma) await prisma.user.upsert({ where: { id: `google_${profile.sub}` }, update: { email: profile.email, name: profile.name ?? profile.email, image: profile.picture, emailVerifiedAt: profile.email_verified ? new Date() : null }, create: { id: `google_${profile.sub}`, email: profile.email, name: profile.name ?? profile.email, image: profile.picture, emailVerifiedAt: profile.email_verified ? new Date() : null, accountType: "MERCHANT", role: "VIEWER" } });
-    await createSession(profile.email, profile.name ?? profile.email);
+    let accountType = "MERCHANT";
+    if (prisma) {
+      const user = await prisma.user.upsert({
+        where: { id: userId },
+        update: { email: profile.email, name: profile.name ?? profile.email, image: profile.picture, emailVerifiedAt: profile.email_verified ? new Date() : null },
+        create: { id: userId, email: profile.email, name: profile.name ?? profile.email, image: profile.picture, emailVerifiedAt: profile.email_verified ? new Date() : null, accountType: "MERCHANT", role: "VIEWER" }
+      });
+      accountType = user.accountType;
+    }
+    await createSession(profile.email, profile.name ?? profile.email, userId, accountType as "MERCHANT" | "CONSUMER");
     store.delete("akuma_google_state");
     return NextResponse.redirect(`${url.origin}/`);
   } catch {

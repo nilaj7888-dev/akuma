@@ -11,7 +11,7 @@ type ChatMessage = {
   timestamp: Date;
 };
 
-type OllamaHistoryMessage = {
+type AgentHistoryMessage = {
   role: "user" | "assistant";
   content: string;
 };
@@ -35,14 +35,54 @@ export function AgentConsole({ role }: { role: "MERCHANT" | "BUYER" }) {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [offline, setOffline] = useState(false);
-  const [provider, setProvider] = useState("Ollama agent");
+  const [checkingHealth, setCheckingHealth] = useState(true);
+  const [provider, setProvider] = useState("Groq agent");
   const [currentTools, setCurrentTools] = useState<string[]>([]);
+
+  useEffect(() => {
+    // Verify the agent is actually live before claiming so — don't optimistically
+    // show "Groq agent" until a real health check confirms it.
+    const checkHealth = async () => {
+      try {
+        const res = await fetch("/api/ai/health");
+        const data = await res.json() as { status: "online" | "offline"; model?: string };
+        setOffline(data.status !== "online");
+        if (data.status === "online" && data.model) setProvider(data.model);
+      } catch {
+        setOffline(true);
+      } finally {
+        setCheckingHealth(false);
+      }
+    };
+    void checkHealth();
+  }, []);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, currentTools]);
+
+  useEffect(() => {
+    // Load conversation history from sessionStorage on mount
+    const stored = sessionStorage.getItem(`conversation_${role}`);
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored) as ChatMessage[];
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setMessages(parsed);
+      } catch {
+        // Ignore parse errors
+      }
+    }
+  }, [role]);
+
+  useEffect(() => {
+    // Persist conversation to sessionStorage whenever it changes
+    if (messages.length > 0) {
+      sessionStorage.setItem(`conversation_${role}`, JSON.stringify(messages));
+    }
+  }, [messages, role]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -62,7 +102,7 @@ export function AgentConsole({ role }: { role: "MERCHANT" | "BUYER" }) {
     setCurrentTools([]);
 
     // Build history from prior messages (for LLM context)
-    const history: OllamaHistoryMessage[] = messages.map((m) => ({
+    const history: AgentHistoryMessage[] = messages.map((m) => ({
       role: m.role,
       content: m.content,
     }));
@@ -85,7 +125,7 @@ export function AgentConsole({ role }: { role: "MERCHANT" | "BUYER" }) {
         };
         setMessages((prev) => [...prev, errorMsg]);
       } else {
-        setProvider(result.provider === "deterministic-fallback" ? "Local safe fallback" : "Ollama agent");
+        if (result.provider === "deterministic-fallback") setProvider("Local safe fallback");
         const assistantMsg: ChatMessage = {
           id: `msg_${Date.now()}_res`,
           role: "assistant",
@@ -118,7 +158,9 @@ export function AgentConsole({ role }: { role: "MERCHANT" | "BUYER" }) {
           <h2>Ask AKUMA</h2>
         </div>
         <span className={offline ? "ai-status offline" : "ai-status"}>
-          {offline ? (
+          {checkingHealth ? (
+            <>Checking AI status...</>
+          ) : offline ? (
             <>
               <WifiOff size={12} /> AI offline
             </>

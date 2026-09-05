@@ -25,6 +25,8 @@ const contexts = new Map<string, OnboardingContext>();
 
 export function getOnboarding(username: string) { return contexts.get(username) ?? null; }
 
+export function clearOnboardingContexts() { contexts.clear(); }
+
 export function saveOnboarding(username: string, answer: z.infer<typeof onboardingAnswerSchema>) {
   const current = contexts.get(username) ?? { role: answer.role };
   const next: OnboardingContext = { ...current, role: answer.role };

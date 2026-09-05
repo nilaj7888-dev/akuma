@@ -1,5 +1,6 @@
 import { getOnboarding } from "@/lib/onboarding";
-import { ollamaChat, type OllamaMessage } from "../llm/ollama-client";
+import { groqChat, type AiMessage } from "../llm/groq-client";
+import { groqConfig, groqConfigured } from "../llm/model-config";
 import { aiTools, executeAiTool } from "../tools";
 
 // ── System Prompts ───────────────────────────────────────────────
@@ -28,27 +29,98 @@ RESPONSE FORMAT: Direct answer → Evidence (if relevant) → Recommended next s
 
 const BUYER_SYSTEM = `You are AKUMA, an intelligent shopping assistant.
 
-IDENTITY: You are a helpful, knowledgeable shopping guide. You speak naturally and concisely.
+IDENTITY: You are a helpful, knowledgeable shopping guide. You speak naturally and concisely — like a friend helping them shop.
 
-CORE LOOP: UNDERSTAND INTENT → ASK ONLY IF NEEDED → SEARCH PRODUCTS → COMPARE → RECOMMEND → EXPLAIN WHY.
+CORE LOOP: UNDERSTAND INTENT → ASK ONLY MISSING INFO → SEARCH PRODUCTS → COMPARE → RECOMMEND → EXPLAIN WHY.
 
-RULES:
-1. ALWAYS search products using tools. NEVER invent products, prices, or availability.
-2. Don't ask questions when the answer is already in the conversation. If the user said "under ₹5,000", you know the budget.
-3. Ask smart follow-up questions only when information is genuinely missing (e.g. use case, preference).
-4. When comparing products, use real attributes: price, category, stock, not made-up specs.
-5. If a product is too expensive, proactively search for alternatives without being asked.
-6. Remember what products have been discussed, selected, or rejected in this conversation.
-7. Format prices clearly. Stock levels matter — never recommend out-of-stock items.
-8. For negotiation requests, explain honestly whether discounts are available based on merchant policy.
-9. Keep responses concise and natural. No robotic language.`;
+CRITICAL RULES FOR CONVERSATIONS:
+1. GATHER INFO PROGRESSIVELY, NOT ALL AT ONCE
+   - Ask ONE or TWO natural follow-up questions per turn
+   - Never ask every question in a list
+   - Ask only when information is genuinely missing
+   - If user already said "₹5,000 budget", you KNOW the budget — don't ask again
+
+2. REMEMBER WHAT WAS DISCUSSED
+   - Track: product category, budget, quantity, brand preference, specs, location, delivery needs, new/used preference
+   - If user says "headphones" + "gaming" + "₹5,000", you have 3 pieces of info — use them all
+   - Don't re-ask questions the user already answered in THIS conversation
+   - Reference previous answers: "You mentioned gaming, so..."
+
+3. ASK SMART FOLLOW-UPS (CATEGORY-AWARE)
+   - After "I need headphones": Ask use case (gaming? music? calls?)
+   - After "gaming headphones": Ask budget
+   - After budget: Ask wired vs wireless OR brand preference (whichever is more relevant)
+   - Stop asking when you have enough info to search effectively
+
+   CATEGORY-SPECIFIC QUESTIONS (ask naturally, one at a time):
+   • Electronics (phones, laptops, headphones): Budget → specs (RAM/storage/screen) → brand preference → new/refurb
+   • Clothing/Fashion: Size → color/style → occasion → material preference
+   • Food/Groceries: Quantity → dietary restrictions → organic preference → delivery date
+   • Furniture: Room dimensions → style (modern/traditional) → assembly preference → delivery logistics
+   • Books: Genre → language → new/used → format (hardcover/paperback/ebook)
+   • Sports equipment: Skill level → indoor/outdoor → brand → size/fit
+   • Beauty products: Skin type → concerns → ingredient preferences → brand loyalty
+   • Home appliances: Space constraints → energy efficiency → warranty → installation needs
+
+4. SEARCH & COMPARE WITH REAL DATA
+   - ALWAYS use searchProducts tool with collected info
+   - Never invent products, prices, or specs
+   - If budget is ₹5,000 and all products are ₹8,000+, be honest: "I found gaming headphones but they're mostly above ₹5,000. Want to see them anyway?"
+   - Format prices clearly. Always mention stock.
+
+5. NATURAL NEGOTIATION & INTEREST CREATION
+   - If user likes a product but wants a lower price, use tool: requestNegotiation or submitBuyerOffer
+   - Explain honestly: "I can reach out to the merchant. They usually negotiate on bulk orders."
+   - If user wants to express interest, suggest: "Should I create a buyer interest? That way merchants see exactly what you need."
+
+6. EMAIL CONSENT — ASK NATURALLY, NOT FORCED
+   - Only ask about email when relevant (after expressing interest, before creating an offer)
+   - Example: "I can email you when a merchant responds to your interest. Would you like that?"
+   - Don't ask at the start unless user asks
+   - Respect their choice — if they say no, never nag
+
+7. CONVERSATION FORMAT
+   - Keep responses SHORT and NATURAL
+   - No robotic language, no bullet lists unless user asks
+   - Show product recommendations as: "Product name (₹price, X in stock) — why it matches"
+   - When recommending next action: "Want me to create a buyer interest?" not "NEXT STEPS: 1. Create interest..."
+
+8. EXAMPLES OF GOOD FOLLOW-UPS:
+   ❌ "What is your budget? What brand? How many units? New or used? When do you need it?"
+   ✅ "What's your budget for these?"
+
+   ❌ "Tell me your location, delivery timeframe, size, color, and warranty preference"
+   ✅ "Where should it be delivered? Any rush?"
+
+   ❌ "Do you want to negotiate this price? Should I save this? Do you want emails?"
+   ✅ "This is ₹4,500. Want me to reach out to the merchant and ask for ₹4,000?"
+
+RESPONSE FORMAT:
+- Natural response (1-2 sentences or short paragraph)
+- One follow-up question (if needed)
+- Suggested action if appropriate (if you have enough info to act)
+`;
 
 const MAX_TOOL_LOOPS = 8;
+
+// Tools a buyer is allowed to call. Used both to scope what Groq is offered and
+// to re-check every tool call that comes back.
+const BUYER_TOOLS = [
+  "searchProducts",
+  "getProducts",
+  "getRecommendations",
+  "compareProducts",
+  "getNegotiationPolicy",
+  "requestNegotiation",
+  "submitBuyerOffer",
+  "updateShoppingSession",
+];
 
 function toolsForMessage(role: "MERCHANT" | "BUYER", message: string) {
   const text = message.toLowerCase();
   if (role === "BUYER") {
-    return aiTools.filter((tool) => ["searchProducts", "getProducts"].includes(tool.function.name));
+    // These are the tools needed for a conversational shopping experience.
+    return aiTools.filter((tool) => BUYER_TOOLS.includes(tool.function.name));
   }
 
   const requested = new Set<string>();
@@ -81,8 +153,9 @@ export async function runAkumaAgent(input: {
   username: string;
   role: "MERCHANT" | "BUYER";
   message: string;
-  history?: OllamaMessage[];
-}): Promise<{ content: string; toolActivity: string[] }> {
+  history?: AiMessage[];
+  systemPromptOverride?: string;
+}): Promise<{ provider: string; model: string; content: string; toolActivity: string[] }> {
   const context = getOnboarding(input.username);
 
   const contextSummary =
@@ -101,9 +174,9 @@ export async function runAkumaAgent(input: {
         negotiation: context?.negotiationPreference,
       };
 
-  const systemPrompt = input.role === "MERCHANT" ? MERCHANT_SYSTEM : BUYER_SYSTEM;
+  const systemPrompt = input.systemPromptOverride || (input.role === "MERCHANT" ? MERCHANT_SYSTEM : BUYER_SYSTEM);
 
-  const messages: OllamaMessage[] = [
+  const messages: AiMessage[] = [
     {
       role: "system",
       content: `${systemPrompt}\n\nAuthenticated context: ${JSON.stringify(contextSummary)}`,
@@ -116,14 +189,11 @@ export async function runAkumaAgent(input: {
   const tools = toolsForMessage(input.role, input.message);
 
   for (let step = 0; step < MAX_TOOL_LOOPS; step++) {
-    const response = await ollamaChat(messages, tools);
-    const message = response.message;
-
-    if (!message) throw new Error("AI returned no response.");
+    const { message } = await groqChat(messages, tools);
 
     // No tool calls → final response
     if (!message.tool_calls?.length) {
-      return { content: message.content, toolActivity };
+      return { provider: "groq", model: groqConfig.model, content: message.content, toolActivity };
     }
 
     // Process tool calls
@@ -132,9 +202,13 @@ export async function runAkumaAgent(input: {
     for (const call of message.tool_calls) {
       const toolName = call.function.name;
 
-      // Permission check: buyers can only use searchProducts and getProducts
-      if (input.role === "BUYER" && !["searchProducts", "getProducts"].includes(toolName)) {
-        messages.push({ role: "tool", content: JSON.stringify({ error: `Tool ${toolName} is not available as a buyer.` }) });
+      // Permission check: buyers can only use shopping tools
+      if (input.role === "BUYER" && !BUYER_TOOLS.includes(toolName)) {
+        messages.push({
+          role: "tool",
+          tool_call_id: call.id,
+          content: JSON.stringify({ error: `Tool ${toolName} is not available as a buyer.` }),
+        });
         toolActivity.push(`${toolName} (denied)`);
         continue;
       }
@@ -143,21 +217,26 @@ export async function runAkumaAgent(input: {
 
       try {
         const result = await executeAiTool(toolName, call.function.arguments, input.role);
-        messages.push({ role: "tool", content: JSON.stringify(result) });
+        messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
       } catch (err: unknown) {
         const errorMessage = err instanceof Error ? err.message : "Unknown error";
-        messages.push({ role: "tool", content: JSON.stringify({ error: errorMessage }) });
+        messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify({ error: errorMessage }) });
       }
     }
   }
 
   return {
+    provider: "groq",
+    model: groqConfig.model,
     content: "I reached the maximum number of analysis steps. Here's what I found so far based on the tools I called. Please ask a more specific question if you need further detail.",
     toolActivity,
   };
 }
 
 // ── Safe Fallback (no LLM) ───────────────────────────────────────
+// Used when GROQ_API_KEY is missing: real tool data, no generated prose.
+
+const NO_KEY_HINT = "Set GROQ_API_KEY to enable the conversational agent.";
 
 export async function runSafeFallback(input: { role: "MERCHANT" | "BUYER"; message: string }): Promise<{
   provider: string;
@@ -172,13 +251,13 @@ export async function runSafeFallback(input: { role: "MERCHANT" | "BUYER"; messa
     if (products.length) {
       return {
         provider: "deterministic-fallback",
-        content: `I found ${products.length} product${products.length === 1 ? "" : "s"}: ${products.map((p) => `${p.name} (${p.priceDisplay})`).join(", ")}. Start Ollama for conversational shopping.`,
+        content: `I found ${products.length} product${products.length === 1 ? "" : "s"}: ${products.map((p) => `${p.name} (${p.priceDisplay})`).join(", ")}. ${NO_KEY_HINT}`,
         toolActivity: ["searchProducts"],
       };
     }
     return {
       provider: "deterministic-fallback",
-      content: "I could not find products matching that request. Start Ollama for conversational search.",
+      content: `I could not find products matching that request. ${NO_KEY_HINT}`,
       toolActivity: ["searchProducts"],
     };
   }
@@ -190,7 +269,7 @@ export async function runSafeFallback(input: { role: "MERCHANT" | "BUYER"; messa
   };
   return {
     provider: "deterministic-fallback",
-    content: `Your store has ${metrics.totalOrders ?? 0} orders, ${metrics.totalCustomers ?? 0} customers, and ${metrics.totalRevenueDisplay ?? "₹0"} in revenue. Start Ollama for intelligent analysis and recommendations.`,
+    content: `Your store has ${metrics.totalOrders ?? 0} orders, ${metrics.totalCustomers ?? 0} customers, and ${metrics.totalRevenueDisplay ?? "₹0"} in revenue. ${NO_KEY_HINT}`,
     toolActivity: ["getStoreMetrics"],
   };
 }

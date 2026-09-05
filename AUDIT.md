@@ -111,11 +111,11 @@ AKUMA has a **solid foundation** with real authentication, database schema, API 
 - **Impact:** App runs but all data is ephemeral
 
 **AI Provider**
-- Ollama assumed to be at `http://localhost:11434`
-- `OLLAMA_MODEL` defaults to `qwen3`
-- If Ollama unreachable, falls back to deterministic responses
-- **Current state:** Ollama likely not running
-- **Impact:** AI responses come from `runSafeFallback()`, not real LLM
+- Groq via `groq-sdk`, keyed by `GROQ_API_KEY`
+- `GROQ_MODEL` defaults to `llama-3.1-8b-instant`, `GROQ_FAST_MODEL` to `llama-3.1-8b-instant`
+- If the key is unset, falls back to deterministic responses
+- **Current state:** key set in `.env.local`
+- **Impact:** without a key, AI responses come from `runSafeFallback()`, not a real LLM
 
 **Google OAuth**
 - Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET
@@ -170,7 +170,7 @@ AKUMA has a **solid foundation** with real authentication, database schema, API 
 1. Copy `.env.example` to `.env`
 2. Set `DATABASE_URL` to PostgreSQL connection string
 3. Run `npm run db:generate && npm run db:migrate && npm run db:seed`
-4. Optionally: Start Ollama and set OLLAMA_BASE_URL
+4. Optionally: set `GROQ_API_KEY` in `.env.local` to enable the AI agent
 
 ---
 

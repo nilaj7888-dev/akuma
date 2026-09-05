@@ -1,9 +1,9 @@
 import { getPrisma } from "@/lib/db";
 import { evaluateGuardrails, type MerchantPolicy } from "@/lib/guardrails";
-import type { OllamaTool } from "./llm/ollama-client";
+import type { AiTool } from "./llm/groq-client";
 
 // ── Tool Definitions ─────────────────────────────────────────────
-export const aiTools: OllamaTool[] = [
+export const aiTools: AiTool[] = [
   {
     type: "function",
     function: {
@@ -133,6 +133,117 @@ export const aiTools: OllamaTool[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "getProductDetails",
+      description: "Get detailed information about a specific product including price, stock, merchant, description, and specifications. Use when consumer asks about a specific product.",
+      parameters: {
+        type: "object",
+        properties: {
+          productId: { type: "string", description: "The product ID" },
+        },
+        required: ["productId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "compareProducts",
+      description: "Compare two or more products side-by-side. Shows price, availability, specifications, and merchant for comparison. Use when consumer asks 'which is better' or wants to compare products.",
+      parameters: {
+        type: "object",
+        properties: {
+          productIds: { type: "array", items: { type: "string" }, description: "Array of product IDs to compare" },
+        },
+        required: ["productIds"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "getRecommendations",
+      description: "Get product recommendations based on consumer requirements, budget, quantity, and use case. Uses real catalog data and explains why each product was selected.",
+      parameters: {
+        type: "object",
+        properties: {
+          category: { type: "string", description: "Product category or use case" },
+          budget: { type: "number", description: "Maximum budget in paise (optional)" },
+          quantity: { type: "number", description: "Quantity needed (optional)" },
+          preferences: { type: "string", description: "Any additional preferences or constraints" },
+        },
+        required: ["category"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "getNegotiationPolicy",
+      description: "Get the merchant's negotiation policy for a specific product including whether negotiation is enabled, max discount allowed, and quantity thresholds.",
+      parameters: {
+        type: "object",
+        properties: {
+          productId: { type: "string", description: "The product ID" },
+          quantity: { type: "number", description: "The desired quantity" },
+        },
+        required: ["productId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "requestNegotiation",
+      description: "Request a price negotiation for a product. The consumer can specify a desired quantity and price. Returns negotiation status and next steps.",
+      parameters: {
+        type: "object",
+        properties: {
+          productId: { type: "string", description: "The product ID" },
+          quantity: { type: "number", description: "Quantity to negotiate for", minimum: 1 },
+          requestedPrice: { type: "number", description: "Requested price per unit in paise (optional)" },
+        },
+        required: ["productId", "quantity"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "submitBuyerOffer",
+      description: "Submit a formal buyer offer for a product with price negotiation. Creates negotiation record, notifies merchant via email, and logs audit trail. Use when buyer wants to make an offer or negotiate price.",
+      parameters: {
+        type: "object",
+        properties: {
+          productId: { type: "string", description: "The product ID" },
+          buyerId: { type: "string", description: "The buyer's user ID" },
+          offeredPrice: { type: "number", description: "Offered price per unit in paise (must be > 0)", minimum: 1 },
+          quantity: { type: "number", description: "Quantity (default 1)", default: 1 },
+          buyerLocation: { type: "string", description: "Buyer location/city for merchant reference (optional)" },
+        },
+        required: ["productId", "buyerId", "offeredPrice"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "updateShoppingSession",
+      description: "Update the consumer's shopping session with gathered requirements (budget, quantity, mode, category, preferences). Use to persist context for the session.",
+      parameters: {
+        type: "object",
+        properties: {
+          mode: { type: "string", enum: ["RETAIL", "BULK"], description: "Shopping mode" },
+          budget: { type: "number", description: "Budget in paise" },
+          quantity: { type: "number", description: "Quantity needed" },
+          requirements: { type: "object", description: "Structured requirements (category, use case, etc.)" },
+        },
+        required: [],
+      },
+    },
+  },
 ];
 
 // ── Tool Execution ───────────────────────────────────────────────
@@ -145,18 +256,26 @@ export async function executeAiTool(
   const prisma = getPrisma();
   if (!prisma) return { error: "Database not connected. I cannot access store data right now." };
 
-  const merchant = await prisma.merchant.findUnique({
-    where: { email: merchantEmail },
-    include: { policy: true, _count: { select: { orders: true, customers: true, products: true } } },
-  });
-  if (!merchant) return { error: "Merchant not found." };
+  // For merchants, get merchant data. For buyers, we'll fetch products across all merchants.
+  let merchant = null;
+  if (role === "MERCHANT") {
+    merchant = await prisma.merchant.findUnique({
+      where: { email: merchantEmail },
+      include: { policy: true, _count: { select: { orders: true, customers: true, products: true } } },
+    });
+    if (!merchant) return { error: "Merchant not found." };
+  }
 
-  // ── searchProducts ──
+  // ── searchProducts ── (for BUYER, search ALL merchants' products; for MERCHANT, search own catalog)
   if (name === "searchProducts") {
     const query = typeof args.query === "string" ? args.query.toLowerCase() : "";
+    // Buyers see all products from all merchants; merchants see only their own
+    const productWhere = role === "BUYER"
+      ? { active: true }  // All active products
+      : { merchantId: merchant!.id, active: true };
     const allProducts = await prisma.product.findMany({
-      where: { merchantId: merchant.id, active: true },
-      select: { id: true, name: true, category: true, price: true, stock: true, description: true },
+      where: productWhere,
+      select: { id: true, name: true, category: true, price: true, stock: true, description: true, merchant: { select: { name: true } } },
     });
     const matches = allProducts.filter(
       (p) =>
@@ -181,7 +300,7 @@ export async function executeAiTool(
 
   // ── getStoreMetrics ──
   if (name === "getStoreMetrics") {
-    if (role !== "MERCHANT") return { error: "This tool is available to merchants only." };
+    if (role !== "MERCHANT" || !merchant) return { error: "This tool is available to merchants only." };
     const revenueResult = await prisma.order.aggregate({
       where: { merchantId: merchant.id, status: "PAID" },
       _sum: { amount: true },
@@ -199,7 +318,7 @@ export async function executeAiTool(
 
   // ── getTopProducts ──
   if (name === "getTopProducts") {
-    if (role !== "MERCHANT") return { error: "This tool is available to merchants only." };
+    if (role !== "MERCHANT" || !merchant) return { error: "This tool is available to merchants only." };
     const limit = typeof args.limit === "number" ? Math.min(args.limit, 20) : 5;
     const topProducts = await prisma.orderItem.groupBy({
       by: ["productId"],
@@ -227,7 +346,7 @@ export async function executeAiTool(
 
   // ── getCustomerSegments ──
   if (name === "getCustomerSegments") {
-    if (role !== "MERCHANT") return { error: "This tool is available to merchants only." };
+    if (role !== "MERCHANT" || !merchant) return { error: "This tool is available to merchants only." };
     const segments = await prisma.customer.groupBy({
       by: ["segment"],
       where: { merchantId: merchant.id },
@@ -241,7 +360,7 @@ export async function executeAiTool(
 
   // ── getProductAffinity ──
   if (name === "getProductAffinity") {
-    if (role !== "MERCHANT") return { error: "This tool is available to merchants only." };
+    if (role !== "MERCHANT" || !merchant) return { error: "This tool is available to merchants only." };
     // Compute actual co-purchase rates from order items
     const orders = await prisma.order.findMany({
       where: { merchantId: merchant.id, status: "PAID" },
@@ -291,7 +410,7 @@ export async function executeAiTool(
 
   // ── getRevenueTrends ──
   if (name === "getRevenueTrends") {
-    if (role !== "MERCHANT") return { error: "This tool is available to merchants only." };
+    if (role !== "MERCHANT" || !merchant) return { error: "This tool is available to merchants only." };
     const days = typeof args.days === "number" ? Math.min(args.days, 90) : 30;
     const since = new Date(Date.now() - days * 86_400_000);
     const recentOrders = await prisma.order.findMany({
@@ -322,7 +441,7 @@ export async function executeAiTool(
 
   // ── getMerchantPolicy ──
   if (name === "getMerchantPolicy") {
-    if (role !== "MERCHANT") return { error: "This tool is available to merchants only." };
+    if (role !== "MERCHANT" || !merchant) return { error: "This tool is available to merchants only." };
     const policy = merchant.policy;
     if (!policy) return { error: "No policy configured for this merchant." };
     return {
@@ -340,9 +459,13 @@ export async function executeAiTool(
 
   // ── getProducts ──
   if (name === "getProducts") {
+    // For buyers, show all products; for merchants, show own catalog
+    const productWhere = role === "MERCHANT" && merchant
+      ? { merchantId: merchant.id, active: true }
+      : { active: true };
     const products = await prisma.product.findMany({
-      where: { merchantId: merchant.id, active: true },
-      select: { id: true, name: true, category: true, price: true, cost: true, stock: true },
+      where: productWhere,
+      select: { id: true, name: true, category: true, price: true, cost: true, stock: true, merchant: { select: { name: true } } },
     });
     return {
       products: products.map((p) => ({
@@ -351,16 +474,17 @@ export async function executeAiTool(
         category: p.category,
         pricePaise: p.price,
         priceDisplay: `₹${(p.price / 100).toLocaleString("en-IN")}`,
-        ...(role === "MERCHANT" ? { costPaise: p.cost, marginPercent: Math.round(((p.price - p.cost) / p.price) * 100) } : {}),
+        ...(role === "MERCHANT" && merchant ? { costPaise: p.cost, marginPercent: Math.round(((p.price - p.cost) / p.price) * 100) } : {}),
         stock: p.stock,
         available: p.stock > 0,
+        merchantName: p.merchant.name,
       })),
     };
   }
 
   // ── simulateOffer ──
   if (name === "simulateOffer") {
-    if (role !== "MERCHANT") return { error: "This tool is available to merchants only." };
+    if (role !== "MERCHANT" || !merchant) return { error: "This tool is available to merchants only." };
     const productId = args.productId as string;
     const discountPercent = args.discountPercent as number;
     const product = await prisma.product.findFirst({ where: { id: productId, merchantId: merchant.id } });
@@ -401,6 +525,7 @@ export async function executeAiTool(
 
   // ── checkGuardrails ──
   if (name === "checkGuardrails") {
+    if (role !== "MERCHANT" || !merchant) return { error: "This tool is available to merchants only." };
     const policy = merchant.policy;
     if (!policy) return { error: "No policy configured." };
     const result = evaluateGuardrails(
@@ -432,7 +557,7 @@ export async function executeAiTool(
 
   // ── proposeCampaign ──
   if (name === "proposeCampaign") {
-    if (role !== "MERCHANT") return { error: "This tool is available to merchants only." };
+    if (role !== "MERCHANT" || !merchant) return { error: "This tool is available to merchants only." };
     const policy = merchant.policy;
     if (!policy) return { error: "No policy configured." };
 
@@ -512,6 +637,375 @@ export async function executeAiTool(
       opportunityId: opp.id,
       riskLevel: guardrailResult.riskLevel,
       requiresApproval: true,
+    };
+  }
+
+  // ── getProductDetails ──
+  if (name === "getProductDetails") {
+    const productId = args.productId as string;
+    const product = await prisma.product.findUnique({
+      where: { id: productId },
+      include: { merchant: { select: { name: true } } },
+    });
+    if (!product) return { error: "Product not found." };
+    return {
+      id: product.id,
+      name: product.name,
+      description: product.description,
+      category: product.category,
+      pricePaise: product.price,
+      priceDisplay: `₹${(product.price / 100).toLocaleString("en-IN")}`,
+      stock: product.stock,
+      available: product.active && product.stock > 0,
+      merchantName: product.merchant.name,
+    };
+  }
+
+  // ── compareProducts ──
+  if (name === "compareProducts") {
+    const productIds = args.productIds as string[];
+    if (!Array.isArray(productIds) || productIds.length < 2) {
+      return { error: "Please provide at least 2 product IDs to compare." };
+    }
+    const products = await prisma.product.findMany({
+      where: { id: { in: productIds } },
+      include: { merchant: { select: { name: true } } },
+    });
+    return {
+      comparison: products.map((p) => ({
+        id: p.id,
+        name: p.name,
+        category: p.category,
+        pricePaise: p.price,
+        priceDisplay: `₹${(p.price / 100).toLocaleString("en-IN")}`,
+        stock: p.stock,
+        available: p.active && p.stock > 0,
+        merchantName: p.merchant.name,
+      })),
+    };
+  }
+
+  // ── getRecommendations ──
+  if (name === "getRecommendations") {
+    const category = (args.category as string)?.toLowerCase() ?? "";
+    const budget = args.budget as number | undefined;
+    const quantity = (args.quantity as number) ?? 1;
+
+    // Build query conditions based on role
+    const whereConditions: any = { active: true };
+
+    // For merchants only, filter by their own products
+    if (role === "MERCHANT" && merchant) {
+      whereConditions.merchantId = merchant.id;
+    }
+
+    // Add category filter if provided
+    if (category) {
+      whereConditions.OR = [
+        { category: { contains: category, mode: "insensitive" } },
+        { name: { contains: category, mode: "insensitive" } },
+      ];
+    }
+
+    // Add budget filter if provided
+    if (budget) {
+      whereConditions.price = { lte: Math.floor(budget / quantity) };
+    }
+
+    const products = await prisma.product.findMany({
+      where: whereConditions,
+      include: { merchant: { select: { name: true } } },
+      take: 5,
+      orderBy: { stock: "desc" },
+    });
+
+    return {
+      recommendations: products.map((p) => ({
+        id: p.id,
+        name: p.name,
+        category: p.category,
+        pricePaise: p.price,
+        priceDisplay: `₹${(p.price / 100).toLocaleString("en-IN")}`,
+        totalForQuantity: p.price * quantity,
+        totalDisplay: `₹${((p.price * quantity) / 100).toLocaleString("en-IN")}`,
+        stock: p.stock,
+        available: p.active && p.stock >= quantity,
+        merchantName: p.merchant.name,
+        reason: budget && p.price * quantity <= budget ? "Within budget" : "Available in stock",
+      })),
+      count: products.length,
+    };
+  }
+
+  // ── getNegotiationPolicy ──
+  if (name === "getNegotiationPolicy") {
+    const productId = args.productId as string;
+    const quantity = (args.quantity as number) ?? 1;
+    const product = await prisma.product.findUnique({
+      where: { id: productId },
+      select: { merchantId: true, price: true, cost: true },
+    });
+    if (!product) return { error: "Product not found." };
+
+    const policy = await prisma.policy.findUnique({
+      where: { merchantId: product.merchantId },
+    });
+
+    if (!policy) {
+      return { negotiationEnabled: false, message: "Merchant has not configured a policy." };
+    }
+
+    const margin = Math.round(((product.price - product.cost) / product.price) * 100);
+    const maxDiscount = policy.maxDiscountPercent;
+    const minPrice = Math.round(product.price * (1 - maxDiscount / 100));
+
+    return {
+      negotiationEnabled: policy.negotiationEnabled,
+      currentPricePaise: product.price,
+      currentPriceDisplay: `₹${(product.price / 100).toLocaleString("en-IN")}`,
+      maxDiscountPercent: maxDiscount,
+      minimumPricePaise: minPrice,
+      minimumPriceDisplay: `₹${(minPrice / 100).toLocaleString("en-IN")}`,
+      totalValuePaise: product.price * quantity,
+      totalValueDisplay: `₹${((product.price * quantity) / 100).toLocaleString("en-IN")}`,
+      autoApprovalEnabled: policy.autoApprovalEnabled,
+      requireApprovalAbove: policy.requireApprovalAbove,
+      message: policy.negotiationEnabled
+        ? `Negotiation is enabled. Maximum discount: ${maxDiscount}%.`
+        : "This merchant does not allow price negotiation.",
+    };
+  }
+
+  // ── requestNegotiation ──
+  if (name === "requestNegotiation") {
+    if (role !== "BUYER") return { error: "Only consumers can request negotiation." };
+    const productId = args.productId as string;
+    const quantity = args.quantity as number;
+    const requestedPrice = args.requestedPrice as number | undefined;
+
+    const product = await prisma.product.findUnique({
+      where: { id: productId },
+      select: { id: true, merchantId: true, price: true, stock: true, active: true },
+    });
+
+    if (!product) return { error: "Product not found." };
+    if (!product.active || product.stock < quantity) {
+      return { error: "Product is not available in the requested quantity." };
+    }
+
+    const policy = await prisma.policy.findUnique({
+      where: { merchantId: product.merchantId },
+    });
+
+    if (!policy?.negotiationEnabled) {
+      return { error: "This merchant does not allow price negotiation." };
+    }
+
+    // Note: In a real system, we'd get userId from the authenticated session
+    // For now, we'll return a placeholder that the API layer should fill
+    return {
+      status: "NEGOTIATION_REQUEST_PREPARED",
+      message: "Negotiation request is ready to be submitted via the API.",
+      productId,
+      quantity,
+      originalPricePaise: product.price,
+      requestedPricePaise: requestedPrice,
+      merchantApprovalRequired: requestedPrice
+        ? Math.round((1 - requestedPrice / product.price) * 100) > policy.maxDiscountPercent
+        : false,
+      nextStep: "Call POST /api/consumer/negotiation to submit this request.",
+    };
+  }
+
+  // ── submitBuyerOffer ──
+  if (name === "submitBuyerOffer") {
+    if (role !== "BUYER") return { error: "Only consumers can submit buyer offers." };
+
+    try {
+      const productId = args.productId as string;
+      const buyerId = args.buyerId as string;
+      const offeredPrice = args.offeredPrice as number;
+      const quantity = (args.quantity as number) ?? 1;
+      const buyerLocation = args.buyerLocation as string | undefined;
+
+      // Validate offered price
+      if (offeredPrice <= 0) {
+        return { error: "Offered price must be greater than zero." };
+      }
+
+      // Fetch product with merchant details
+      const product = await prisma.product.findUnique({
+        where: { id: productId },
+        include: {
+          merchant: { select: { id: true, email: true, name: true } },
+        },
+      });
+
+      if (!product) {
+        return { error: "Product not found. Please check the product ID." };
+      }
+
+      if (!product.active) {
+        return { error: "Product is not active." };
+      }
+
+      if (product.stock < quantity) {
+        return { error: `Only ${product.stock} units available, requested ${quantity}.` };
+      }
+
+      if (!product.merchant.email) {
+        return { error: "Merchant email not found. Cannot send offer notification." };
+      }
+
+      // Check if negotiation is enabled for this merchant
+      const policy = await prisma.policy.findUnique({
+        where: { merchantId: product.merchant.id },
+      });
+
+      if (!policy?.negotiationEnabled) {
+        return { error: "This merchant does not allow price negotiation." };
+      }
+
+      // Check if discount exceeds merchant policy
+      const discountPercent = Math.round((1 - offeredPrice / product.price) * 100);
+      if (discountPercent > (policy.maxDiscountPercent || 0)) {
+        return {
+          error: `Requested discount ${discountPercent}% exceeds merchant maximum of ${policy.maxDiscountPercent}%.`,
+          maxAllowedDiscount: policy.maxDiscountPercent,
+          currentPrice: product.price,
+          minimumPrice: Math.round(product.price * (1 - (policy.maxDiscountPercent || 0) / 100)),
+        };
+      }
+
+      // Import email helper (dynamic import to avoid circular dependencies in development)
+      const { sendOfferNotification } = await import("@/lib/email");
+
+      let negotiationId: string = "";
+      let negotiationAuditId: string = "";
+
+      // Execute atomic transaction
+      await prisma.$transaction(async (tx) => {
+        // a) Create Negotiation record
+        const negotiation = await tx.negotiation.create({
+          data: {
+            userId: buyerId,
+            merchantId: product.merchant.id,
+            productId,
+            quantity,
+            originalPrice: product.price,
+            requestedPrice: offeredPrice,
+            status: "CUSTOMER_OFFER",
+            merchantApprovalRequired: discountPercent > (policy.requireApprovalAbove || 0),
+          },
+        });
+
+        negotiationId = negotiation.id;
+
+        // b) Create NegotiationAudit record
+        const audit = await tx.negotiationAudit.create({
+          data: {
+            negotiationId,
+            action: "OFFER_CREATED",
+            actor: "BUYER",
+            price: offeredPrice,
+            metadata: {
+              quantity,
+              originalPrice: product.price,
+              discountPercent,
+              buyerId,
+              productName: product.name,
+              timestamp: new Date().toISOString(),
+            },
+          },
+        });
+
+        negotiationAuditId = audit.id;
+
+        // c) Create BuyerInterest record (optional demand logging)
+        await tx.buyerInterest.create({
+          data: {
+            userId: buyerId,
+            merchantId: product.merchant.id,
+            productId,
+            quantity,
+            preferredPrice: offeredPrice,
+            status: "OPEN",
+            merchantSeen: false,
+            notificationPinned: true,
+            merchantResponse: null,
+            expiresAt: new Date(Date.now() + 72 * 60 * 60 * 1000), // 72 hours
+          },
+        });
+
+        // Create notification for merchant
+        await tx.notification.create({
+          data: {
+            merchantId: product.merchant.id,
+            type: "BUYER_INTEREST_NEW",
+            title: `New Price Offer for ${product.name}`,
+            message: `A customer offered ₹${(offeredPrice / 100).toLocaleString("en-IN")} for ${quantity} unit${quantity > 1 ? "s" : ""} of ${product.name}`,
+            resourceType: "NEGOTIATION",
+            resourceId: negotiationId,
+            actionUrl: `/merchant/negotiations/${negotiationId}`,
+            metadata: {
+              productName: product.name,
+              offeredPrice,
+              quantity,
+              discountPercent,
+            },
+          },
+        });
+
+        // Send email to merchant
+        await sendOfferNotification(product.merchant.email, {
+          id: negotiationId,
+          productId: product.id,
+          productName: product.name,
+          buyerName: "Buyer",
+          offerAmount: offeredPrice,
+          originalPrice: product.price,
+          message: buyerLocation ? `Location: ${buyerLocation}` : undefined,
+        });
+      });
+
+      // Return success payload for AI agent
+      return {
+        success: true,
+        negotiationId,
+        negotiationAuditId,
+        message: "Offer submitted successfully and merchant notified via email.",
+        details: {
+          productName: product.name,
+          merchantName: product.merchant.name,
+          originalPrice: product.price,
+          offeredPrice,
+          quantity,
+          discountPercent,
+          requiresMerchantApproval: discountPercent > (policy.requireApprovalAbove || 0),
+          merchantEmailSent: product.merchant.email,
+        },
+      };
+    } catch (error: any) {
+      console.error("Error submitting buyer offer:", error);
+      return {
+        success: false,
+        error: error.message || "Failed to submit offer. Please try again.",
+      };
+    }
+  }
+
+  // ── updateShoppingSession ──
+  if (name === "updateShoppingSession") {
+    if (role !== "BUYER") return { error: "Only consumers can update shopping session." };
+    // Note: This would need userId from authenticated session
+    return {
+      status: "SESSION_UPDATE_PREPARED",
+      message: "Shopping session update is ready.",
+      mode: args.mode,
+      budget: args.budget,
+      quantity: args.quantity,
+      requirements: args.requirements,
+      nextStep: "Session will be updated via PATCH /api/consumer/cart",
     };
   }
 
