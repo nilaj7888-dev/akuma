@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Users, TrendingUp, Target, MapPin, Calendar, DollarSign, Package, CheckCircle, AlertCircle, Sparkles } from "lucide-react";
+import { Users, TrendingUp, Target, MapPin, Calendar, DollarSign, Package, AlertCircle, Sparkles } from "lucide-react";
 import { PageTransition, FadeIn, StaggerContainer, StaggerItem } from "@/components/ui/animations";
 import { MetricTile, MetricGrid } from "@/components/ui/metric-tile";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";

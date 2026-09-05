@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { createGoal, getGoals, getGoalProgress } from "@/lib/goals";
 import { getPrisma } from "@/lib/db";
+import { resolveMerchant } from "@/lib/resolve-merchant";
 import type { GoalType } from "@prisma/client";
 
 export async function GET() {
@@ -12,9 +13,7 @@ export async function GET() {
   if (!prisma) return NextResponse.json([]);
 
   try {
-    const merchant = await prisma.merchant.findUnique({
-      where: { email: "demo@nova-electronics.test" },
-    });
+    const merchant = await resolveMerchant(prisma, session);
 
     if (!merchant) return NextResponse.json([]);
 
@@ -39,9 +38,7 @@ export async function POST(request: Request) {
   if (!prisma) return NextResponse.json({ error: "Database unavailable" }, { status: 503 });
 
   try {
-    const merchant = await prisma.merchant.findUnique({
-      where: { email: "demo@nova-electronics.test" },
-    });
+    const merchant = await resolveMerchant(prisma, session);
 
     if (!merchant) return NextResponse.json({ error: "Merchant not found" }, { status: 404 });
 

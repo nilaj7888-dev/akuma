@@ -1,51 +1,70 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowRight, Play, Pause, Plus, TrendingUp } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { AlertTriangle, ArrowRight, Sparkles, TrendingUp } from "lucide-react";
 import { PageTransition, FadeIn, StaggerContainer, StaggerItem } from "@/components/ui/animations";
 import { MetricTile, MetricGrid } from "@/components/ui/metric-tile";
-import { Card, CardBody, CardHeader } from "@/components/ui/card";
+import { Card, CardBody } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
+import { CardSkeleton } from "@/components/ui/loading-skeleton";
 import { formatMoney } from "@/lib/format";
 
-type Campaign = { id: string; name: string; status: string; type: string; reach: number; conversions: number; revenue: number; startDate: string; endDate: string };
+type Campaign = {
+  id: string;
+  name: string;
+  type: string;
+  status: "DRAFT" | "PENDING_APPROVAL" | "ACTIVE" | "PAUSED" | "COMPLETED" | "FAILED";
+  budget: number;
+  discount: number;
+  expectedRevenue: number;
+  actualRevenue: number;
+  audience: { size?: number } | null;
+  startedAt: string | null;
+  endedAt: string | null;
+};
+
+const STATUS_VARIANT: Record<Campaign["status"], "success" | "warning" | "info" | "error"> = {
+  ACTIVE: "success",
+  PENDING_APPROVAL: "warning",
+  PAUSED: "warning",
+  COMPLETED: "info",
+  DRAFT: "info",
+  FAILED: "error",
+};
 
 export default function CampaignsPage() {
+  const router = useRouter();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
-  useEffect(() => {
-    const loadCampaigns = async () => {
-      try {
-        const res = await fetch("/api/campaigns");
-        const data = await res.json() as Campaign[];
-        if (Array.isArray(data)) {
-          setCampaigns(data);
-        } else {
-          throw new Error("Invalid data");
-        }
-      } catch {
-        setCampaigns([]);
-      }
-      setLoading(false);
-    };
-    void loadCampaigns();
-  }, []);
-
-  const stats = {
-    active: campaigns.filter((c) => c.status === "ACTIVE").length,
-    total: campaigns.length,
-    revenue: campaigns.reduce((sum, c) => sum + c.revenue, 0),
-    conversions: campaigns.reduce((sum, c) => sum + c.conversions, 0),
+  const load = async () => {
+    setError(false);
+    try {
+      const res = await fetch("/api/campaigns");
+      if (!res.ok) throw new Error("request failed");
+      const data = (await res.json()) as Campaign[];
+      setCampaigns(Array.isArray(data) ? data : []);
+    } catch {
+      setCampaigns([]);
+      setError(true);
+    }
+    setLoading(false);
   };
 
-  const statusColors: Record<string, "success" | "warning" | "info" | "amber" | "green" | "error"> = {
-    ACTIVE: "success",
-    PAUSED: "warning",
-    COMPLETED: "info",
-    DRAFT: "info",
+  useEffect(() => {
+    void load();
+  }, []);
+
+  const active = campaigns.filter((c) => c.status === "ACTIVE");
+  const stats = {
+    active: active.length,
+    total: campaigns.length,
+    actualRevenue: campaigns.reduce((sum, c) => sum + c.actualRevenue, 0) / 100,
+    expectedRevenue: campaigns.reduce((sum, c) => sum + c.expectedRevenue, 0) / 100,
   };
 
   return (
@@ -62,49 +81,47 @@ export default function CampaignsPage() {
         <div className="page-head">
           <FadeIn>
             <p className="eyebrow">CAMPAIGN MANAGER</p>
-            <h1>Active Campaigns</h1>
-            <p className="subhead">Manage email, SMS, discount, and AI recommendation campaigns across your store.</p>
+            <h1>Campaigns</h1>
+            <p className="subhead">Every campaign here started as an AI-proposed opportunity you approved — AKUMA doesn't launch anything on its own.</p>
           </FadeIn>
-          <Button icon={<Plus size={16} />}>Create campaign</Button>
+          <Button icon={<Sparkles size={16} />} onClick={() => router.push("/dashboard/opportunities")}>
+            Review opportunities
+          </Button>
         </div>
 
-        <MetricGrid columns={4}>
-          <MetricTile label="Active Campaigns" value={stats.active} delta={`${stats.total} total`} trend="up" />
-          <MetricTile label="Total Revenue" value={formatMoney(stats.revenue)} delta="+22% vs last month" trend="up" />
-          <MetricTile label="Total Conversions" value={stats.conversions} delta="+18% conversion rate" trend="up" />
-          <MetricTile label="Avg ROI" value="340%" delta="+45 pts vs last quarter" trend="up" />
-        </MetricGrid>
+        {!loading && !error && campaigns.length > 0 && (
+          <MetricGrid columns={3}>
+            <MetricTile label="Active Campaigns" value={stats.active} delta={`${stats.total} total`} trend="neutral" />
+            <MetricTile label="Actual Revenue" value={formatMoney(stats.actualRevenue)} delta="From active + completed campaigns" trend={stats.actualRevenue > 0 ? "up" : "neutral"} />
+            <MetricTile label="Expected Revenue" value={formatMoney(stats.expectedRevenue)} delta="Estimated at approval time" trend="neutral" />
+          </MetricGrid>
+        )}
 
         {loading ? (
-          <div style={{ textAlign: "center", padding: "40px" }}>
-            <p style={{ color: "var(--muted)" }}>Loading campaigns...</p>
+          <div style={{ display: "grid", gap: "12px" }}>
+            <CardSkeleton />
+            <CardSkeleton />
           </div>
+        ) : error ? (
+          <EmptyState icon={AlertTriangle} title="Couldn't load campaigns" description="The request failed. Check your connection and try again." action={{ label: "Retry", onClick: load }} />
         ) : campaigns.length > 0 ? (
           <StaggerContainer delay={0.08}>
             <div style={{ display: "grid", gap: "12px" }}>
               {campaigns.map((campaign) => (
                 <StaggerItem key={campaign.id}>
                   <Card hover>
-                    <CardBody style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
+                    <CardBody style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
+                      <div style={{ flex: 1, minWidth: "220px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px", flexWrap: "wrap" }}>
                           <h3 style={{ margin: 0, fontSize: "14px" }}>{campaign.name}</h3>
-                          <Badge variant={statusColors[campaign.status] || "info"} size="sm">
-                            {campaign.status}
-                          </Badge>
-                          <Badge variant="amber" size="sm">
-                            {campaign.type}
-                          </Badge>
+                          <Badge variant={STATUS_VARIANT[campaign.status] ?? "info"} size="sm">{campaign.status.replace(/_/g, " ")}</Badge>
+                          <Badge variant="amber" size="sm">{campaign.type.replace(/_/g, " ")}</Badge>
                         </div>
-                        <div style={{ display: "flex", gap: "24px", fontSize: "11px", color: "var(--muted)" }}>
-                          <span>Reach: {campaign.reach.toLocaleString()}</span>
-                          <span>Conversions: {campaign.conversions.toLocaleString()}</span>
-                          <span>Revenue: {formatMoney(campaign.revenue)}</span>
+                        <div style={{ display: "flex", gap: "24px", fontSize: "11px", color: "var(--muted)", flexWrap: "wrap" }}>
+                          {campaign.audience?.size != null && <span>Audience: {campaign.audience.size.toLocaleString("en-IN")}</span>}
+                          <span>Discount: {campaign.discount}%</span>
+                          <span>Actual revenue: {formatMoney(campaign.actualRevenue / 100)}</span>
                         </div>
-                      </div>
-                      <div style={{ display: "flex", gap: "8px" }}>
-                        <Button variant="ghost" size="sm" icon={campaign.status === "ACTIVE" ? <Pause size={14} /> : <Play size={14} />} />
-                        <Button variant="ghost" size="sm" icon={<ArrowRight size={14} />} />
                       </div>
                     </CardBody>
                   </Card>
@@ -113,7 +130,7 @@ export default function CampaignsPage() {
             </div>
           </StaggerContainer>
         ) : (
-          <EmptyState icon={TrendingUp} title="No campaigns yet" description="Create your first campaign to start reaching customers" action={{ label: "Create campaign", onClick: () => {}, icon: <Plus size={14} /> }} />
+          <EmptyState icon={TrendingUp} title="No campaigns yet" description="Campaigns are created automatically when you approve an AI-proposed opportunity." action={{ label: "Review opportunities", onClick: () => router.push("/dashboard/opportunities"), icon: <ArrowRight size={14} /> }} />
         )}
       </section>
     </PageTransition>

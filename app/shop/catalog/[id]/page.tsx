@@ -1,5 +1,7 @@
 "use client";
 
+import { showToast } from "@/components/toast";
+
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { ArrowLeft, MapPin, Package, MessageSquare } from "lucide-react";
@@ -128,12 +130,12 @@ export default function ProductDetailPage() {
                     body: JSON.stringify({ productId: product.id, quantity: 1 })
                   });
                   if (res.ok) {
-                    alert('Added to cart! Go to cart to checkout or negotiate.');
+                    showToast("Added to cart. Go to your cart to checkout or negotiate.", "success");
                   } else {
-                    alert('Failed to add - make sure you are logged in as consumer');
+                    showToast("Couldn't add to cart. Make sure you're logged in as a consumer.", "error");
                   }
                 } catch (err) {
-                  alert('Error adding to cart');
+                  showToast("Something went wrong adding this to your cart.", "error");
                 }
               }}
             >

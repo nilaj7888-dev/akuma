@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { createWinBackCampaign } from "@/lib/churn";
 import { getPrisma } from "@/lib/db";
+import { resolveMerchant } from "@/lib/resolve-merchant";
 
 export async function POST(request: Request) {
   const session = await getSession();
@@ -23,9 +24,7 @@ export async function POST(request: Request) {
     }
 
     // Get merchant
-    const merchant = await prisma.merchant.findUnique({
-      where: { email: "demo@nova-electronics.test" },
-    });
+    const merchant = await resolveMerchant(prisma, session);
 
     if (!merchant) return NextResponse.json({ error: "Merchant not found" }, { status: 404 });
 

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getChurnRiskCustomers } from "@/lib/churn";
 import { getPrisma } from "@/lib/db";
+import { resolveMerchant } from "@/lib/resolve-merchant";
 
 export async function GET() {
   const session = await getSession();
@@ -14,9 +15,7 @@ export async function GET() {
   if (!prisma) return NextResponse.json([]);
 
   try {
-    const merchant = await prisma.merchant.findUnique({
-      where: { email: "demo@nova-electronics.test" },
-    });
+    const merchant = await resolveMerchant(prisma, session);
 
     if (!merchant) return NextResponse.json([]);
 

@@ -34,38 +34,30 @@ export async function analyzeConversionFunnel(merchantId: string): Promise<Funne
       },
     });
 
-    // Get product views (simulated from order items as proxy)
-    const products = await prisma.product.findMany({
-      where: { merchantId, active: true },
-    });
+    // No page-view/analytics tracking exists in this app yet, so a "Browse
+    // Catalog" stage can't be measured — it was previously a fabricated
+    // `products.length * 50` guess, which is exactly the kind of invented
+    // number this funnel must never show. The funnel now starts at the
+    // first stage AKUMA actually records: an order being created.
 
-    // Stage 1: Browse (Product catalog views - estimated from product count)
-    const browseCount = products.length * 50; // Estimate 50 views per product
-
-    // Stage 2: Add to Cart (Orders created)
+    // Stage 1: Cart Created (Orders created) — the real starting point.
     const cartCount = orders.length;
 
-    // Stage 3: Checkout Started (Orders with items)
+    // Stage 2: Checkout Started (Orders with items)
     const checkoutCount = orders.filter((o) => o.items.length > 0).length;
 
-    // Stage 4: Payment Initiated (Orders with transactions)
+    // Stage 3: Payment Initiated (Orders with transactions)
     const paymentInitiated = orders.filter((o) => o.transaction).length;
 
-    // Stage 5: Payment Completed (Paid orders)
+    // Stage 4: Payment Completed (Paid orders)
     const paidCount = orders.filter((o) => o.status === "PAID").length;
 
     const stages: FunnelStage[] = [
       {
-        stage: "Browse Catalog",
-        count: browseCount,
+        stage: "Cart Created",
+        count: cartCount,
         dropoff: 0,
         conversionRate: 100,
-      },
-      {
-        stage: "Add to Cart",
-        count: cartCount,
-        dropoff: browseCount > 0 ? Math.round(((browseCount - cartCount) / browseCount) * 100) : 0,
-        conversionRate: browseCount > 0 ? Math.round((cartCount / browseCount) * 100) : 0,
       },
       {
         stage: "Checkout Started",
@@ -87,7 +79,7 @@ export async function analyzeConversionFunnel(merchantId: string): Promise<Funne
       },
     ];
 
-    const overallConversion = browseCount > 0 ? Math.round((paidCount / browseCount) * 100) : 0;
+    const overallConversion = cartCount > 0 ? Math.round((paidCount / cartCount) * 100) : 0;
 
     // Find biggest dropoff
     let biggestDropoff = { stage: "", dropoff: 0 };
@@ -99,16 +91,13 @@ export async function analyzeConversionFunnel(merchantId: string): Promise<Funne
 
     // Generate recommendations
     const recommendations: string[] = [];
-    if (stages[1].conversionRate < 10) {
-      recommendations.push("Improve product discoverability with better categorization and search");
-    }
-    if (stages[2].dropoff > 30) {
+    if (stages[0].dropoff > 30) {
       recommendations.push("Reduce cart abandonment with simplified checkout and saved carts");
     }
-    if (stages[3].dropoff > 20) {
+    if (stages[1].dropoff > 20) {
       recommendations.push("Optimize checkout flow to reduce friction");
     }
-    if (stages[4].dropoff > 10) {
+    if (stages[2].dropoff > 10) {
       recommendations.push("Add more payment options and improve payment success rate");
     }
 

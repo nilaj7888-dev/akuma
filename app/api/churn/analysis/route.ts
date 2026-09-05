@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getPrisma } from "@/lib/db";
+import { resolveMerchant } from "@/lib/resolve-merchant";
 
 type ChurnAnalysis = {
   atRiskCustomers: number;
@@ -36,9 +37,7 @@ export async function GET() {
   }
 
   try {
-    const merchant = await prisma.merchant.findUnique({
-      where: { email: "demo@nova-electronics.test" },
-    });
+    const merchant = await resolveMerchant(prisma, session);
 
     if (!merchant) {
       return NextResponse.json({
@@ -89,17 +88,14 @@ export async function GET() {
     const averageDaysSinceLastOrder =
       atRiskCustomers.length > 0 ? Math.round(totalDays / atRiskCustomers.length) : 0;
 
-    // Estimate potential revenue loss (simple calculation based on at-risk customers count)
-    const potentialRevenueLoss = atRiskCustomers.length * 5000; // ₹5,000 average per customer
+    // Revenue at risk: each at-risk customer's own recorded lifetime value —
+    // real accumulated data, never a flat per-customer assumption.
+    const potentialRevenueLoss = atRiskCustomers.reduce((sum, customer) => sum + customer.lifetimeValue, 0) / 100;
 
-    // Top churn reasons (mock data for now - would need sentiment analysis of support tickets)
-    const topChurnReasons = [
-      { reason: "Price concerns", percentage: 35 },
-      { reason: "Competitor switched", percentage: 28 },
-      { reason: "Poor support experience", percentage: 18 },
-      { reason: "Product dissatisfaction", percentage: 12 },
-      { reason: "Other", percentage: 7 },
-    ];
+    // No support-ticket or sentiment data source exists yet to attribute WHY
+    // customers churn. Never fabricate reasons — return an honest empty list
+    // until that data is actually collected.
+    const topChurnReasons: Array<{ reason: string; percentage: number }> = [];
 
     const analysis: ChurnAnalysis = {
       atRiskCustomers: atRiskCustomers.length,

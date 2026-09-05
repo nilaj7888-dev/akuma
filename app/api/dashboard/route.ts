@@ -13,13 +13,15 @@ export async function GET() {
 	const prisma = getPrisma();
 	if (prisma) {
 		const merchant = await resolveMerchant(prisma, session);
-		if (!merchant) return NextResponse.json({ totalRevenue: 0, orders: 0, customers: 0, opportunities: 0, influencedRevenue: 0, actionsExecuted: 0, conversionLift: 0, recentOrders: [] });
+		if (!merchant) return NextResponse.json({ totalRevenue: 0, orders: 0, customers: 0, opportunities: 0, pendingApprovals: 0, influencedRevenue: 0, actionsExecuted: 0, recentOrders: [] });
 
-		const [revenue, orderCount, customers, opportunities, campaigns, recentOrders] = await Promise.all([
+		const [revenue, orderCount, customers, opportunities, pendingApprovals, actionsExecuted, campaigns, recentOrders] = await Promise.all([
 			prisma.order.aggregate({ where: { merchantId: merchant.id, status: { in: [...PAID_STATUSES] } }, _sum: { amount: true } }),
 			prisma.order.count({ where: { merchantId: merchant.id } }),
 			prisma.customer.count({ where: { merchantId: merchant.id } }),
-			prisma.opportunity.count({ where: { merchantId: merchant.id } }),
+			prisma.opportunity.count({ where: { merchantId: merchant.id, status: { in: ["DISCOVERED", "PROPOSED", "APPROVAL_REQUIRED"] } } }),
+			prisma.opportunity.count({ where: { merchantId: merchant.id, status: "APPROVAL_REQUIRED" } }),
+			prisma.agentAction.count({ where: { agentRun: { merchantId: merchant.id }, status: "COMPLETED" } }),
 			prisma.campaign.aggregate({ where: { merchantId: merchant.id }, _sum: { actualRevenue: true } }),
 			prisma.order.findMany({ where: { merchantId: merchant.id }, orderBy: { createdAt: "desc" }, take: 5, include: { items: { include: { product: { select: { name: true } } } } } }),
 		]);
@@ -29,9 +31,12 @@ export async function GET() {
 			orders: orderCount,
 			customers,
 			opportunities,
+			pendingApprovals,
 			influencedRevenue: (campaigns._sum.actualRevenue ?? 0) / 100,
-			actionsExecuted: 0,
-			conversionLift: 0,
+			actionsExecuted,
+			// No baseline/prior-period conversion data is tracked yet — never
+			// fabricate a lift number. Omit the field; the frontend shows
+			// "not tracked yet" instead of a fake 0%.
 			recentOrders: recentOrders.map(o => ({
 				id: o.id,
 				status: o.status,

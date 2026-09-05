@@ -15,8 +15,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [user, setUser] = useState<User>(null);
   const [merchant, setMerchant] = useState<MerchantProfile>(null);
   const [loading, setLoading] = useState(true);
-  const [metrics, setMetrics] = useState<{ opportunities?: number }>({});
+  const [metrics, setMetrics] = useState<{ opportunities?: number; pendingApprovals?: number }>({});
   const [negotiationsCount, setNegotiationsCount] = useState(0);
+  const [health, setHealth] = useState<{ razorpay?: string; webhook?: string } | null>(null);
+  const [aiHealth, setAiHealth] = useState<{ status?: string } | null>(null);
 
   useEffect(() => {
     // Get or create tab-specific demo identity
@@ -50,7 +52,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         }
         // Store merchant identity for this tab
         sessionStorage.setItem(`akuma_demo_role_${tabId}`, "MERCHANT");
-        const metricsData = await metricsRes.json() as { opportunities?: number };
+        const metricsData = await metricsRes.json() as { opportunities?: number; pendingApprovals?: number };
         setMetrics(metricsData);
         setUser({ name: authData.user.name, role: "MERCHANT" });
 
@@ -89,6 +91,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return () => clearInterval(interval);
   }, [user]);
 
+  // System status panel reflects real configuration, never an assumed "all good".
+  useEffect(() => {
+    if (!user || user.role !== "MERCHANT") return;
+    let cancelled = false;
+    const loadHealth = async () => {
+      try {
+        const [healthRes, aiRes] = await Promise.all([fetch("/api/health"), fetch("/api/ai/health")]);
+        if (!cancelled && healthRes.ok) setHealth(await healthRes.json());
+        if (!cancelled && aiRes.ok) setAiHealth(await aiRes.json());
+      } catch {
+        // Leave status as "checking" rather than claiming a state we couldn't verify.
+      }
+    };
+    void loadHealth();
+    return () => { cancelled = true; };
+  }, [user]);
+
   if (loading) return <main className="auth-loading"><span className="brand-mark">A</span><p>Securing your AKUMA session...</p></main>;
 
   return (
@@ -116,16 +135,34 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <Link href="/dashboard/catalog" className="nav-link"><Package size={17} /> Catalog</Link>
           <Link href="/dashboard/campaigns" className="nav-link"><CircleDollarSign size={17} /> Campaigns</Link>
           <p className="nav-label lower">CONTROL</p>
-          <Link href="/dashboard/approvals" className="nav-link"><ShieldCheck size={17} /> Approvals <b className="amber">1</b></Link>
+          <Link href="/dashboard/approvals" className="nav-link"><ShieldCheck size={17} /> Approvals {!!metrics.pendingApprovals && <b className="amber">{metrics.pendingApprovals}</b>}</Link>
           <Link href="/dashboard/audit" className="nav-link"><Clock3 size={17} /> Audit trail</Link>
           <Link href="/dashboard/policies" className="nav-link"><Gauge size={17} /> Policies</Link>
           <Link href="/dashboard/profile" className="nav-link"><User size={17} /> Profile</Link>
         </nav>
         <div className="system">
-          <div className="system-head"><span>System status</span><span className="live-dot">● Operational</span></div>
-          <div className="health"><span>Razorpay</span><i>Test API connected</i></div>
-          <div className="health"><span>Webhook</span><i>Listening</i></div>
-          <div className="health"><span>Agent</span><i>Ready</i></div>
+          <div className="system-head">
+            <span>System status</span>
+            {health && aiHealth ? (
+              <span className="live-dot" style={{ color: aiHealth.status === "online" ? "var(--green)" : "var(--amber)" }}>
+                ● {aiHealth.status === "online" ? "Operational" : "Limited (AI offline)"}
+              </span>
+            ) : (
+              <span className="live-dot" style={{ color: "var(--muted)" }}>Checking...</span>
+            )}
+          </div>
+          <div className="health">
+            <span>Razorpay</span>
+            <i>{!health ? "Checking..." : health.razorpay === "test_mode_configured" ? "Test API connected" : "Local simulation (no live keys)"}</i>
+          </div>
+          <div className="health">
+            <span>Webhook</span>
+            <i>{!health ? "Checking..." : health.webhook === "verification_ready" ? "Verified" : "Not configured"}</i>
+          </div>
+          <div className="health">
+            <span>Agent</span>
+            <i>{!aiHealth ? "Checking..." : aiHealth.status === "online" ? "Ready" : "Offline · deterministic fallback"}</i>
+          </div>
         </div>
         <div className="profile" onClick={async () => {
           await fetch("/api/auth/logout", { method: "POST" });

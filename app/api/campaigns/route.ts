@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getPrisma } from "@/lib/db";
+import { resolveMerchant } from "@/lib/resolve-merchant";
 
 export async function GET() {
   const session = await getSession();
@@ -10,9 +11,7 @@ export async function GET() {
   if (!prisma) return NextResponse.json([]);
 
   try {
-    const merchant = await prisma.merchant.findUnique({
-      where: { email: "demo@nova-electronics.test" },
-    });
+    const merchant = await resolveMerchant(prisma, session);
 
     if (!merchant) return NextResponse.json([]);
 
@@ -36,9 +35,7 @@ export async function POST(request: Request) {
   if (!prisma) return NextResponse.json({ error: "Database unavailable" }, { status: 503 });
 
   try {
-    const merchant = await prisma.merchant.findUnique({
-      where: { email: "demo@nova-electronics.test" },
-    });
+    const merchant = await resolveMerchant(prisma, session);
 
     if (!merchant) return NextResponse.json({ error: "Merchant not found" }, { status: 404 });
 
@@ -65,7 +62,10 @@ export async function POST(request: Request) {
         budget,
         discount,
         status: "DRAFT",
-        expectedRevenue: budget * 2, // Estimate 2x return
+        // No forecasting model exists yet for a brand-new campaign — starting at
+        // 0 and letting real performance (actualRevenue) fill in is honest;
+        // a fabricated multiplier is not.
+        expectedRevenue: 0,
       },
     });
 

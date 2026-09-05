@@ -1,5 +1,7 @@
 "use client";
 
+import { showToast } from "@/components/toast";
+
 import { useEffect, useState } from "react";
 import { Search, Package, MapPin, Star } from "lucide-react";
 import Link from "next/link";
@@ -174,12 +176,12 @@ export default function CatalogPage() {
                         body: JSON.stringify({ productId: product.id, quantity: 1 })
                       });
                       if (res.ok) {
-                        alert('Added to cart!');
+                        showToast("Added to cart.", "success");
                       } else {
-                        alert('Failed to add - make sure you are logged in as consumer');
+                        showToast("Couldn't add to cart. Make sure you're logged in as a consumer.", "error");
                       }
                     } catch (err) {
-                      alert('Error adding to cart');
+                      showToast("Something went wrong adding this to your cart.", "error");
                     }
                   }}
                 >

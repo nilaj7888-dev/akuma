@@ -7,6 +7,7 @@ import { Card, CardBody } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
+import { showToast } from "@/components/toast";
 
 type Negotiation = {
   id: string;
@@ -68,11 +69,11 @@ export default function NegotiationsPage() {
         await fetchNegotiations();
       } else {
         const error = await res.json();
-        alert(error.error?.message || "Failed to respond");
+        showToast(error.error?.message || "Failed to respond", "error");
       }
     } catch (error) {
       console.error("Error responding to negotiation:", error);
-      alert("Failed to respond to negotiation");
+      showToast("Failed to respond to negotiation", "error");
     } finally {
       setResponding(null);
     }

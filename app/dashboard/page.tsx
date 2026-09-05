@@ -1,75 +1,133 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowRight, Sparkles, TrendingUp, Users, Target, ShieldCheck } from "lucide-react";
-import { motion } from "framer-motion";
+import { AlertTriangle, ArrowRight, RefreshCw, Sparkles, ShieldCheck, Target, TrendingUp } from "lucide-react";
 import { MetricTile, MetricGrid } from "@/components/ui/metric-tile";
+import { MetricSkeleton, CardSkeleton } from "@/components/ui/loading-skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Card, CardBody } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { PageTransition, FadeIn, StaggerContainer, StaggerItem } from "@/components/ui/animations";
+import { PageTransition, FadeIn, StaggerContainer } from "@/components/ui/animations";
 import { formatMoney } from "@/lib/format";
+import { showToast } from "@/components/toast";
 import { AgentConsole } from "@/components/agent-console";
 
-type Metrics = { totalRevenue: number; orders: number; customers: number; opportunities: number; influencedRevenue: number; actionsExecuted: number; conversionLift: number };
-type Opportunity = { id: string; title: string; description: string; type: string; confidence: number; expectedRevenue: number; expectedLift: number; riskScore: number; marginImpact: number; status: string; evidence: Record<string, unknown>; recommendedAction: string };
+type Metrics = {
+  totalRevenue: number;
+  orders: number;
+  customers: number;
+  opportunities: number;
+  pendingApprovals: number;
+  influencedRevenue: number;
+  actionsExecuted: number;
+};
+type Opportunity = {
+  id: string;
+  title: string;
+  description: string;
+  type: string;
+  confidence: number;
+  expectedRevenue: number;
+  expectedLift: number;
+  riskScore: number;
+  marginImpact: number;
+  status: string;
+  evidence: Record<string, unknown>;
+  recommendedAction: string;
+};
+
+const TYPE_LABEL: Record<string, string> = {
+  CROSS_SELL: "CROSS-SELL OPPORTUNITY",
+  UPSELL: "UPSELL OPPORTUNITY",
+  BUNDLE: "BUNDLE OPPORTUNITY",
+  REACTIVATION: "REACTIVATION OPPORTUNITY",
+  CAMPAIGN: "CAMPAIGN OPPORTUNITY",
+  BUYER_DEMAND_MATCH: "BUYER DEMAND MATCH",
+};
 
 export default function OverviewPage() {
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
   const [selectedOppIndex, setSelectedOppIndex] = useState(0);
-  const [notice, setNotice] = useState("Ready for a bounded decision.");
-  const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [approving, setApproving] = useState(false);
   const [user, setUser] = useState<{ name: string } | null>(null);
 
   const refresh = async () => {
+    setLoadError(false);
     try {
-      const meRes = await fetch("/api/auth/me");
+      const [meRes, dashRes, oppRes] = await Promise.all([
+        fetch("/api/auth/me"),
+        fetch("/api/dashboard"),
+        fetch("/api/dashboard/opportunities"),
+      ]);
+      if (!dashRes.ok) throw new Error("dashboard request failed");
+
       const meData = (await meRes.json()) as { user: { name: string } | null };
       if (meData.user) setUser(meData.user);
 
-      // Try real API first
-      const dashRes = await fetch("/api/dashboard");
-      const dashData = await dashRes.json();
-      setMetrics(dashData as Metrics);
+      const dashData = (await dashRes.json()) as Metrics;
+      setMetrics(dashData);
 
-      const oppRes = await fetch("/api/dashboard/opportunities");
-      const oppData = await oppRes.json() as Opportunity[];
-      setOpportunities(Array.isArray(oppData) ? oppData : []);
+      const oppData = (await oppRes.json()) as Opportunity[];
+      const list = Array.isArray(oppData) ? oppData : [];
+      setOpportunities(list);
+      setSelectedOppIndex((i) => Math.min(i, Math.max(list.length - 1, 0)));
     } catch {
       setMetrics(null);
       setOpportunities([]);
+      setLoadError(true);
     }
+    setLoading(false);
   };
 
   useEffect(() => {
     void refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const runAnalysis = async () => {
-    setBusy(true);
-    setNotice("AKUMA is analyzing purchase patterns and policy...");
-
+    setAnalyzing(true);
     try {
-      // Call the new AI analysis endpoint
       const analyzeRes = await fetch("/api/dashboard/analyze", { method: "POST" });
       const analyzeData = await analyzeRes.json();
-
       if (analyzeRes.ok && analyzeData.success) {
-        setNotice(`${analyzeData.opportunitiesCreated} opportunities found by AI analysis.`);
+        showToast(
+          analyzeData.opportunitiesCreated > 0
+            ? `Found ${analyzeData.opportunitiesCreated} new opportunit${analyzeData.opportunitiesCreated === 1 ? "y" : "ies"}.`
+            : "Analysis ran, but found nothing new to recommend right now.",
+          analyzeData.opportunitiesCreated > 0 ? "success" : "info"
+        );
       } else {
-        setNotice(analyzeData.error?.message || "Analysis completed but no opportunities found.");
+        showToast(analyzeData.error?.message || "Analysis could not run.", "error");
       }
-
-      // Refresh to get the newly created opportunities
       await refresh();
-    } catch (error) {
-      console.error("Analysis failed:", error);
-      setNotice("Analysis failed. Please try again.");
+    } catch {
+      showToast("Analysis failed. Please try again.", "error");
     }
+    setAnalyzing(false);
+  };
 
-    setBusy(false);
+  const selected = opportunities[selectedOppIndex];
+  const isPersisted = !!selected && !selected.id.startsWith("rec-");
+
+  const approveSelected = async () => {
+    if (!selected || !isPersisted) return;
+    setApproving(true);
+    try {
+      const res = await fetch(`/api/opportunities/${selected.id}/approve`, { method: "POST" });
+      if (res.ok) {
+        showToast("Approved. AKUMA created the campaign and logged it to the audit trail.", "success");
+        await refresh();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        showToast(data.error?.message || data.error || "Couldn't approve this action.", "error");
+      }
+    } catch {
+      showToast("Couldn't approve this action. Check your connection.", "error");
+    }
+    setApproving(false);
   };
 
   const now = new Date();
@@ -79,6 +137,14 @@ export default function OverviewPage() {
   const timeString = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")} IST`;
   const greetHour = now.getHours();
   const greeting = greetHour < 12 ? "Good morning" : greetHour < 17 ? "Good afternoon" : "Good evening";
+
+  const headline = loading
+    ? "Checking your store for new opportunities..."
+    : loadError
+      ? "Couldn't reach your workspace just now."
+      : opportunities.length > 0
+        ? `AKUMA found ${opportunities.length} opportunit${opportunities.length === 1 ? "y" : "ies"} worth reviewing.`
+        : "No open opportunities right now — run an analysis to look for one.";
 
   return (
     <PageTransition>
@@ -97,10 +163,10 @@ export default function OverviewPage() {
               {dateString} <span>•</span> {timeString}
             </p>
             <h1>{greeting}, {user?.name ?? "there"}.</h1>
-            <p className="subhead">AKUMA found a path to more revenue. One action is ready for your decision.</p>
+            <p className="subhead">{headline}</p>
           </FadeIn>
-          <Button onClick={runAnalysis} disabled={busy} icon={<Sparkles size={16} />}>
-            {busy ? "Analyzing..." : "Run analysis"}
+          <Button onClick={runAnalysis} disabled={analyzing} icon={<Sparkles size={16} />}>
+            {analyzing ? "Analyzing..." : "Run analysis"}
           </Button>
         </div>
 
@@ -111,50 +177,54 @@ export default function OverviewPage() {
           <span>
             <strong>Bounded autonomy is active.</strong> AI proposes, policy decides, you approve. No action can bypass merchant controls.
           </span>
-          <span className="notice-status">
-            <span style={{ color: "var(--green)" }}>●</span> {notice}
-          </span>
         </div>
 
-        <MetricGrid columns={4}>
-          <MetricTile label="TOTAL REVENUE" value={metrics ? formatMoney(metrics.totalRevenue) : "—"} delta="+12.8%" trend="up" icon={TrendingUp} />
-          <MetricTile label="AI-INFLUENCED REVENUE" value={metrics ? formatMoney(metrics.influencedRevenue) : "—"} delta="+8.4%" trend="up" icon={Sparkles} />
-          <MetricTile label="OPPORTUNITIES" value={metrics?.opportunities ?? "—"} delta="4 new today" trend="up" icon={Target} />
-          <MetricTile label="ACTIONS EXECUTED" value={metrics?.actionsExecuted ?? "—"} delta="+3 this week" trend="up" icon={ShieldCheck} />
-        </MetricGrid>
+        {loading ? (
+          <MetricGrid columns={4}>
+            <MetricSkeleton />
+            <MetricSkeleton />
+            <MetricSkeleton />
+            <MetricSkeleton />
+          </MetricGrid>
+        ) : loadError ? null : metrics ? (
+          <MetricGrid columns={4}>
+            <MetricTile label="TOTAL REVENUE" value={formatMoney(metrics.totalRevenue)} icon={TrendingUp} delta={`${metrics.orders} order${metrics.orders === 1 ? "" : "s"} total`} trend="neutral" />
+            <MetricTile label="AI-INFLUENCED REVENUE" value={formatMoney(metrics.influencedRevenue)} icon={Sparkles} delta="From approved actions" trend={metrics.influencedRevenue > 0 ? "up" : "neutral"} />
+            <MetricTile label="OPEN OPPORTUNITIES" value={metrics.opportunities} icon={Target} delta={metrics.pendingApprovals > 0 ? `${metrics.pendingApprovals} awaiting approval` : "None awaiting approval"} trend="neutral" />
+            <MetricTile label="ACTIONS EXECUTED" value={metrics.actionsExecuted} icon={ShieldCheck} delta="All-time, approved by you" trend="neutral" />
+          </MetricGrid>
+        ) : null}
 
         <div className="section-heading">
           <div>
             <p className="eyebrow">DECISION QUEUE</p>
-            <h2>{opportunities.length} opportunities need review</h2>
+            <h2>{loading ? "Loading..." : `${opportunities.length} opportunit${opportunities.length === 1 ? "y" : "ies"} need review`}</h2>
           </div>
         </div>
 
         <section className="main-grid">
           <div className="opportunity-panel">
-            {opportunities.length > 0 ? (
+            {loading ? (
+              <CardSkeleton />
+            ) : loadError ? (
+              <EmptyState icon={AlertTriangle} title="Couldn't load your workspace" description="The request failed. Check your connection and try again." action={{ label: "Retry", onClick: refresh, icon: <RefreshCw size={14} /> }} />
+            ) : selected ? (
               <StaggerContainer>
                 <div className="panel-top">
                   <div className="opportunity-type">
                     <span className="pulse" />
-                    {opportunities[selectedOppIndex]?.type === "CROSS_SELL"
-                      ? "CROSS-SELL OPPORTUNITY"
-                      : opportunities[selectedOppIndex]?.type === "REACTIVATION"
-                        ? "REACTIVATION OPPORTUNITY"
-                        : opportunities[selectedOppIndex]?.type === "REVENUE_LEAK"
-                          ? "REVENUE LEAK"
-                          : "PRICE OPTIMIZATION"}
+                    {TYPE_LABEL[selected.type] ?? selected.type.replace(/_/g, " ")}
                   </div>
-                  <span className="pending">AWAITING APPROVAL</span>
+                  <span className="pending">{isPersisted ? "AWAITING APPROVAL" : "RECOMMENDATION"}</span>
                 </div>
 
                 <div className="opportunity-title">
                   <div>
-                    <h3>{opportunities[selectedOppIndex]?.title}</h3>
-                    <p>{opportunities[selectedOppIndex]?.description}</p>
+                    <h3>{selected.title}</h3>
+                    <p>{selected.description}</p>
                   </div>
                   <div className="confidence">
-                    <strong>{opportunities[selectedOppIndex]?.confidence}%</strong>
+                    <strong>{selected.confidence}%</strong>
                     <span>confidence</span>
                   </div>
                 </div>
@@ -162,22 +232,24 @@ export default function OverviewPage() {
                 <div className="evidence-row">
                   <div>
                     <span>EXPECTED REVENUE</span>
-                    <strong>{formatMoney(opportunities[selectedOppIndex]?.expectedRevenue ?? 0)}</strong>
+                    <strong>{formatMoney(selected.expectedRevenue)}</strong>
                     <small>incremental impact</small>
                   </div>
                   <div>
                     <span>EXPECTED LIFT</span>
-                    <strong>{opportunities[selectedOppIndex]?.expectedLift}%</strong>
+                    <strong>{selected.expectedLift}%</strong>
                     <small>conversion estimate</small>
                   </div>
                   <div>
                     <span>MARGIN IMPACT</span>
-                    <strong>{formatMoney(opportunities[selectedOppIndex]?.marginImpact ?? 0)}</strong>
+                    <strong>{formatMoney(selected.marginImpact)}</strong>
                     <small>per transaction</small>
                   </div>
                   <div>
                     <span>RISK SCORE</span>
-                    <strong style={{ color: "var(--green)" }}>LOW · {opportunities[selectedOppIndex]?.riskScore}</strong>
+                    <strong style={{ color: selected.riskScore >= 60 ? "#ef4444" : selected.riskScore >= 30 ? "var(--amber)" : "var(--green)" }}>
+                      {selected.riskScore >= 60 ? "HIGH" : selected.riskScore >= 30 ? "MEDIUM" : "LOW"} · {selected.riskScore}
+                    </strong>
                     <small>bounded action</small>
                   </div>
                 </div>
@@ -185,7 +257,7 @@ export default function OverviewPage() {
                 <div className="action-preview">
                   <div>
                     <span className="preview-tag">RECOMMENDATION</span>
-                    <h4>{opportunities[selectedOppIndex]?.recommendedAction}</h4>
+                    <h4>{selected.recommendedAction}</h4>
                     <p>
                       Opportunity {selectedOppIndex + 1} of {opportunities.length}
                     </p>
@@ -194,17 +266,23 @@ export default function OverviewPage() {
                     <ShieldCheck size={16} />
                     <span>
                       <strong>POLICY COMPLIANT</strong>
-                      <small>Risk score {opportunities[selectedOppIndex]?.riskScore} (low)</small>
+                      <small>Risk score {selected.riskScore}</small>
                     </span>
                   </div>
                 </div>
 
                 <div className="panel-actions">
-                  <Button variant="primary" icon={<ShieldCheck size={16} />} disabled={busy}>
-                    Approve action
-                  </Button>
-                  <Button variant="ghost" icon={<ArrowRight size={16} />}>
-                    View details
+                  {isPersisted ? (
+                    <Button variant="primary" icon={<ShieldCheck size={16} />} disabled={approving} onClick={approveSelected}>
+                      {approving ? "Approving..." : "Approve action"}
+                    </Button>
+                  ) : (
+                    <Button variant="secondary" icon={<Sparkles size={16} />} disabled={analyzing} onClick={runAnalysis}>
+                      Turn into a proposal
+                    </Button>
+                  )}
+                  <Button variant="ghost" icon={<ArrowRight size={16} />} onClick={() => (window.location.href = "/dashboard/opportunities")}>
+                    View all opportunities
                   </Button>
                 </div>
 
@@ -223,16 +301,11 @@ export default function OverviewPage() {
                 )}
               </StaggerContainer>
             ) : (
-              <EmptyState icon={Sparkles} title="No opportunities detected yet." action={{ label: "Run AKUMA analysis", onClick: runAnalysis, icon: <ArrowRight size={14} /> }} />
+              <EmptyState icon={Sparkles} title="No opportunities detected yet." description="AKUMA looks at your orders, inventory, and customer activity. Run an analysis to see what it finds." action={{ label: "Run AKUMA analysis", onClick: runAnalysis, icon: <ArrowRight size={14} /> }} />
             )}
           </div>
           <AgentConsole role="MERCHANT" />
         </section>
-
-        <footer style={{ display: "flex", justifyContent: "space-between", color: "var(--muted)", fontSize: "9px", marginTop: "32px" }}>
-          <span>AKUMA / commerce intelligence</span>
-          <span>Local deterministic demo · Razorpay Test Mode</span>
-        </footer>
       </section>
     </PageTransition>
   );

@@ -112,9 +112,11 @@ export async function createWinBackCampaign(input: WinBackCampaignInput): Promis
         type: input.campaignType,
         audience: { customerIds: input.customerIds },
         discount: input.discountPercent || 0,
-        budget: input.customerIds.length * (input.discountPercent || 0) * 100, // Rough estimate
+        budget: 0,
         status: "DRAFT",
-        expectedRevenue: input.customerIds.length * 1000, // Conservative estimate
+        // No forecasting model exists for a brand-new win-back campaign —
+        // start at 0 and let real performance (actualRevenue) fill in.
+        expectedRevenue: 0,
       },
     });
 

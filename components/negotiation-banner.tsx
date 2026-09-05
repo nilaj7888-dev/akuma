@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { AlertCircle, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { showToast } from "@/components/toast";
 
 type Negotiation = {
   id: string;
@@ -65,13 +66,13 @@ export function NegotiationBanner({ role }: { role: "MERCHANT" | "CONSUMER" }) {
           const data = await refreshRes.json();
           setNegotiations(data);
         }
-        alert(result.message || "Response sent!");
+        showToast(result.message || "Response sent.", "success");
       } else {
-        alert(result.error?.message || "Failed to respond");
+        showToast(result.error?.message || "Failed to respond", "error");
       }
     } catch (error) {
       console.error("Response error:", error);
-      alert("Failed to respond to negotiation");
+      showToast("Failed to respond to negotiation", "error");
     } finally {
       setResponding(null);
     }

@@ -30,6 +30,14 @@ export default function MerchantProfilePage() {
   const sessionTokenRef = useRef(`${Date.now()}_${Math.random().toString(36).slice(2)}`);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Local drafts for text fields: typing only updates these, never fires a
+  // network request per keystroke. The save is debounced, and the input is
+  // never disabled while saving so typing is never interrupted.
+  const [nameDraft, setNameDraft] = useState("");
+  const [phoneDraft, setPhoneDraft] = useState("");
+  const nameSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const phoneSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     const fetchProfile = async () => {
       try {
@@ -37,6 +45,8 @@ export default function MerchantProfilePage() {
         if (res.ok) {
           const data = await res.json();
           setProfile(data);
+          setNameDraft(data?.name ?? "");
+          setPhoneDraft(data?.phone ?? "");
         }
       } finally {
         setLoading(false);
@@ -115,6 +125,22 @@ export default function MerchantProfilePage() {
     }
   };
 
+  const handleNameChange = (value: string) => {
+    setNameDraft(value);
+    if (nameSaveRef.current) clearTimeout(nameSaveRef.current);
+    nameSaveRef.current = setTimeout(() => {
+      if (value.trim() && value !== profile?.name) void updateProfile({ name: value });
+    }, 600);
+  };
+
+  const handlePhoneChange = (value: string) => {
+    setPhoneDraft(value);
+    if (phoneSaveRef.current) clearTimeout(phoneSaveRef.current);
+    phoneSaveRef.current = setTimeout(() => {
+      if (value !== profile?.phone) void updateProfile({ phone: value });
+    }, 600);
+  };
+
   if (loading) {
     return (
       <div className="content">
@@ -168,9 +194,8 @@ export default function MerchantProfilePage() {
           <input
             type="text"
             placeholder="Your business name"
-            value={profile?.name ?? ""}
-            onChange={(e) => updateProfile({ name: e.target.value })}
-            disabled={saving}
+            value={nameDraft}
+            onChange={(e) => handleNameChange(e.target.value)}
           />
           <span className="input-icon"><Building size={17} /></span>
         </div>
@@ -196,9 +221,8 @@ export default function MerchantProfilePage() {
           <input
             type="tel"
             placeholder="+91 98765 43210"
-            value={profile?.phone ?? ""}
-            onChange={(e) => updateProfile({ phone: e.target.value })}
-            disabled={saving}
+            value={phoneDraft}
+            onChange={(e) => handlePhoneChange(e.target.value)}
           />
           <span className="input-icon"><Phone size={17} /></span>
         </div>

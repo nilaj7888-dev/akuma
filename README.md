@@ -1,181 +1,177 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
-
-## Getting Started
-
-First, run the development server:
-
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
-
 # AKUMA
 
-AKUMA is a bounded AI commerce intelligence prototype for Nova Electronics. It turns seeded purchase behavior into a measurable cross-sell opportunity, checks the proposal against merchant policy, requests approval, and records the resulting checkout and verification events.
+**Bounded-autonomy AI commerce platform for local merchants.**
 
-## Run locally
+AKUMA gives a small or independent merchant the kind of data-driven operating layer that large marketplaces build for themselves — an AI that reads a merchant's own orders, products, and customers, finds concrete revenue opportunities, and proposes actions the merchant can review and approve. On the other side of the same system, shoppers get an AI-assisted catalog, cart, and negotiation experience backed by the same policy engine. Merchant and customer are not two separate apps bolted together — they read and write the same underlying data.
+
+## Problem it solves
+
+Local and independent merchants generally have no visibility into things like which products are actually driving repeat purchases, which customers are at risk of churning, where inventory is tying up cash, or when a price is leaving margin on the table. Building that kind of intelligence in-house is normally out of reach for a small operation. AKUMA turns a merchant's existing transactional data into that intelligence automatically, and keeps a human in control of every consequential action.
+
+## Why it's useful for local merchants
+
+- No manual analytics work — dashboards and opportunity detection run against the merchant's real orders, products, and customers as soon as data exists.
+- No black-box automation — every AI-proposed action is checked against merchant-defined policy limits before it can execute, and every action is written to an audit log.
+- No separate systems to reconcile — the merchant dashboard and the customer-facing shop share one Prisma schema, so a negotiation, an order, or a policy change is visible from both sides immediately.
+- Works with nothing configured — without a database or AI provider key, AKUMA falls back to a clearly-labeled deterministic local simulation instead of failing or fabricating data, so the product is inspectable before any infrastructure is set up.
+
+## Core features
+
+- **AI-detected revenue opportunities** — pricing gaps, churn risk, revenue leaks, demand matching, and inventory clearance candidates, each with a confidence score and the evidence behind it.
+- **Bounded autonomy approval flow** — an opportunity moves from `DISCOVERED` to `PROPOSED`/`APPROVAL_REQUIRED` to `ACTIVE` only after passing policy checks and merchant approval; nothing executes unattended beyond what the merchant's own policy explicitly allows.
+- **Policy engine** — per-merchant limits (max discount %, minimum margin %, max single transaction, approval threshold) and feature toggles (recommendations, cross-sell, upsell, negotiation, auto-approval) that every AI action is checked against.
+- **Audit trail** — every policy-checked action, order event, and payment verification is written to an append-only audit log, scoped per merchant.
+- **Merchant analytics suite** — churn & win-back, customer lifetime value, funnel analysis, segmentation, pricing analysis, A/B experiments, and goal tracking, all computed from real Prisma data (or the local deterministic fallback when no database is configured).
+- **AI shopping assistant** — a Groq-backed conversational agent for both merchants ("analyze my store") and shoppers ("find me headphones under ₹5,000"), using real tool calls against the catalog and store metrics rather than free-form generation.
+- **Price negotiation** — shoppers can request a price, merchants (or the AI, within policy) can counter, accept, or decline, with a live negotiation banner on both sides.
+- **Payments** — Razorpay Test Mode integration with webhook signature verification, backed by a local payment simulation when Razorpay isn't configured.
+
+## How the merchant side works
+
+A merchant signs in and lands on a dashboard summarizing real revenue, order count, open opportunities, and pending approvals pulled from their own data. AKUMA's analysis step looks at orders, products, and customer behavior to surface opportunities (e.g. a high-margin cross-sell pattern, an at-risk customer segment, a mispriced product). Each opportunity carries its supporting evidence and a policy-compliance check. Approving one creates the underlying campaign/action and logs it; nothing is applied silently. Separate dashboard views cover inventory, pricing, churn, segmentation, campaigns, experiments, goals, revenue leaks, the audit trail, and merchant policy configuration.
+
+## How the customer side works
+
+A shopper browses a merchant's live catalog, adds items to a cart backed by a real shopping-session record, and can either check out directly (Razorpay Test Mode) or negotiate a price on an item before buying. Order history, delivery addresses, wishlist, and reviews are all backed by their own Prisma models rather than client-only state.
+
+## AI conversational experience
+
+The agent (`ai/agents/akuma-agent.ts`, served through Groq) is given a fixed set of tools — `searchProducts`, `getStoreMetrics`, `getTopProducts`, `getCustomerSegments`, `getProductAffinity`, `getRevenueTrends`, `getMerchantPolicy`, `getProducts`, `simulateOffer`, `checkGuardrails`, `proposeCampaign` — and answers by calling them against real data, not by generating unconstrained text. If `GROQ_API_KEY` is missing or the provider is unreachable, the agent explicitly falls back to deterministic, tool-only answers instead of hallucinating a response, and `/api/ai/health` reports the real connection status and latency.
+
+## Architecture
+
+```
+app/            Next.js App Router — pages (dashboard/*, shop/*) and API routes (api/**)
+components/     Shared UI components (design system primitives, negotiation banner, agent console)
+ai/             Groq client, agent orchestration, tool definitions
+lib/            Domain logic — churn, funnel, segmentation, pricing, guardrails, auth, resolve-merchant, etc.
+prisma/         schema.prisma, migrations/, seed.ts
+public/         Static assets
+tests/          Vitest unit tests
+```
+
+Merchant identity for a request is always resolved through a single shared helper (`lib/resolve-merchant.ts`), so every merchant-scoped API route reads and writes the same merchant record regardless of how the session was created (demo login, OTP login, or Google OAuth).
+
+## Technology stack
+
+- **Framework:** Next.js 16 (App Router, Turbopack), React 19, TypeScript
+- **Styling:** Tailwind CSS 4
+- **Database:** PostgreSQL via Prisma ORM 7 (`@prisma/adapter-pg`)
+- **Cache/queues:** Redis (`ioredis`), BullMQ
+- **AI:** Groq SDK
+- **Payments:** Razorpay Node SDK (Test Mode)
+- **Auth:** Signed HTTP-only session cookies, Google OAuth (`next-auth`), email/phone OTP via Resend
+- **Validation:** Zod
+- **Animation:** Framer Motion
+- **Testing:** Vitest, Playwright
+- **Linting/types:** ESLint, TypeScript (`tsc --noEmit`)
+
+## Database / Prisma
+
+The schema (`prisma/schema.prisma`) models the full domain in one place, including: `Merchant`, `User`, `StoreConnection`, `Product`, `Order`/`OrderItem`, `Transaction`, `Opportunity`, `AgentRun`/`AgentAction`, `Approval`, `Campaign`, `Policy`, `AuditLog`, `Goal`, `Experiment`/`ExperimentVariant`, `ConsumerProfile`, `DeliveryAddress`, `Wishlist`, `ShoppingSession`/`CartItem`, `Negotiation`/`NegotiationAudit`, `BuyerInterest`, `Review`, `Notification`/`NotificationPreference`, `Conversation`/`ConversationMessage`, and `WebhookEvent`. Monetary values are stored as integer paise. Migrations live under `prisma/migrations/`.
+
+When `DATABASE_URL` is not set, routes fall back to a deterministic, clearly-labeled local data generator (`lib/domain.ts`) instead of a live database — this is disclosed behavior for running the product without infrastructure, not a hidden default.
+
+## API / backend overview
+
+Representative route groups under `app/api/`:
+
+- `dashboard`, `opportunities`, `approvals`, `pricing`, `churn`, `funnel`, `segmentation`, `analytics/clv`, `experiments`, `merchant/goals`, `campaigns`, `revenue-leaks`, `audit`, `policy`, `merchant/profile`, `merchant/policy`, `merchant/location`
+- `consumer/catalog`, `consumer/cart`, `consumer/checkout`, `consumer/negotiation`, `consumer/orders`, `consumer/wishlist`, `consumer/reviews`, `consumer/delivery-address`, `consumer/addresses`
+- `auth/login`, `auth/me`, `auth/logout`, `auth/phone/send-otp`, `auth/phone/verify-otp`, `auth/google`, `auth/demo`
+- `ai/chat`, `ai/health`
+- `webhooks/razorpay`
+
+## Authentication
+
+Sessions are signed, HMAC-verified, HTTP-only cookies (`lib/auth.ts`), issued through one of three paths: email/phone OTP (delivered via Resend, with a console-logged fallback code in development), Google OAuth (server-side authorization-code flow), or a built-in demo login gated behind `DEMO_LOGIN_ENABLED` (off by default in production) for evaluating the product without setting up email delivery.
+
+## Local development setup
 
 ```bash
+git clone https://github.com/nilaj7888-dev/akuma.git
+cd akuma
 npm install
+cp .env.example .env
+```
+
+Fill in the environment variables you need (see below), then start the local database and cache:
+
+```bash
+docker compose up -d      # PostgreSQL + Redis
+npm run db:generate       # prisma generate
+npm run db:migrate        # apply migrations
+npm run db:seed           # seed demo data
 npm run dev
 ```
 
 Open `http://localhost:3000`.
 
-The local demo starts with a secure authentication gate. Use username `nilaj123` and password `akuma-demo-password`, then choose Merchant or Buyer. The session is signed and stored in an HTTP-only cookie; the demo password is verified with `scrypt` and is never stored as plaintext. Google OAuth uses the server-side authorization-code flow at `/api/auth/google`; configure `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, and register `http://localhost:3000/api/auth/google/callback` in Google Cloud Console. Without those credentials, the button returns a truthful configuration message.
+## Environment variables
 
-For the persistence foundation, copy `.env.example` to `.env`, start services, and create the schema:
+Names only — see `.env.example` for the full annotated template. Never commit real values.
+
+```
+DATABASE_URL
+REDIS_URL
+AUTH_SECRET
+GOOGLE_CLIENT_ID
+GOOGLE_CLIENT_SECRET
+RAZORPAY_KEY_ID
+RAZORPAY_KEY_SECRET
+RAZORPAY_WEBHOOK_SECRET
+NEXT_PUBLIC_RAZORPAY_KEY_ID
+NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
+GOOGLE_PLACES_API_KEY
+TWILIO_ACCOUNT_SID
+TWILIO_API_KEY
+TWILIO_API_SECRET
+TWILIO_VERIFY_SERVICE_SID
+TWILIO_MESSAGING_SERVICE_SID
+NEXT_PUBLIC_APP_URL
+GROQ_API_KEY
+GROQ_MODEL
+GROQ_FAST_MODEL
+RESEND_API_KEY
+DEMO_LOGIN_ENABLED
+DEMO_MERCHANT_EMAIL
+DEMO_MERCHANT_PIN
+DEMO_CONSUMER_EMAIL
+DEMO_CONSUMER_PIN
+```
+
+Every feature that depends on one of these degrades to an honest fallback state (not a crash, not fabricated data) when the variable is unset — see `/api/health` and `/api/ai/health` for live status.
+
+## Database migrations
 
 ```bash
-docker compose up -d
-npm run db:generate
-npm run db:migrate
-npm run db:seed
+npx prisma migrate dev      # create/apply a migration in development
+npx prisma generate         # regenerate the Prisma client after a schema change
+npx prisma migrate deploy   # apply pending migrations in production
 ```
 
-Without `DATABASE_URL` or Razorpay credentials, AKUMA deliberately uses its local deterministic adapter. With PostgreSQL configured, catalog reads, dashboard metrics, audit reads, opportunity analysis, approvals, checkout orders, transactions, and webhook deduplication use merchant-scoped Prisma records. `/api/health` reports `demo_fallback`, `local_simulation`, and `configuration_required` instead of falsely reporting external services as healthy.
-
-The local fallback is a deterministic demo so AKUMA runs without credentials or external services. The checkout surface is explicitly labelled **Razorpay Test Mode**, but the current checkout route uses local payment simulation; no live money moves and no external Razorpay API response is represented as real.
-
-## AI
-
-AKUMA’s conversational agent, negotiation, and tone rewriting run on [Groq](https://console.groq.com/keys) server-side. Set `GROQ_API_KEY` in `.env.local`; `GROQ_MODEL` (default `llama-3.1-8b-instant`) handles reasoning and tool calling, and `GROQ_FAST_MODEL` (default `llama-3.1-8b-instant`) is the cheaper model used for short tone rewrites. The dashboard agent is available at `/agent`; without a key it falls back to deterministic tool-only answers and returns no fabricated response. Tone rewriting is exposed at `POST /api/ai/rewrite` and never alters the numbers in a message — if the model does, the original text is returned unchanged.
+## Build, typecheck, and test
 
 ```bash
-npm install groq-sdk
+npm run lint        # ESLint
+npm run typecheck   # tsc --noEmit
+npm test            # Vitest
+npm run build       # Next.js production build
 ```
 
-## Demo flow
+`.github/workflows/ci.yml` runs all four on every push and pull request against `main`.
 
-1. Click **Run analysis**. The server analyzes 1,284 seeded orders and produces the Headphones to Protective Case opportunity from observed 31.4% co-purchase behavior.
-2. Open **Why?** to inspect evidence, confidence, expected lift, and policy decision.
-3. Click **Approve action**. The state moves from awaiting approval to active and the audit trail records the approval and campaign activation.
-4. In **Shopping agent**, search the AI-readable product catalog, select products, and confirm a test checkout.
-5. Refresh the activity feed to see order creation and local payment verification.
+## Deployment
 
-## Security and payment boundary
+AKUMA is a standard Next.js 16 App Router application and deploys to any platform that supports Next.js (Vercel, a Node server, or a container). In production, set the environment variables above (at minimum `DATABASE_URL`, `AUTH_SECRET`, and `GROQ_API_KEY` for the full experience), run `npx prisma migrate deploy` against the production database, and build with `npm run build`.
 
-The LLM boundary is represented by validated action proposals in `lib/guardrails.ts`; money, prices, permissions, and policy decisions remain server-side. Checkout requires a server-validated product list and operation ID. The Prisma schema stores monetary values as integer paise and includes merchant-scoped unique keys for orders and operations.
+## Future improvements
 
-The Razorpay adapter in `lib/razorpay.ts` uses the official Node SDK when Test Mode credentials are configured. The webhook route reads the raw request body, verifies `X-Razorpay-Signature` with HMAC-SHA256, checks `x-razorpay-event-id`, and rejects unverified events. Real webhook delivery requires a public staging URL or tunnel; localhost alone is not reachable by Razorpay.
+- Expand automated test coverage beyond the current unit tests in `tests/`
+- Move production authentication onto a dedicated identity provider rather than the current custom session cookie
+- Complete end-to-end Razorpay live-mode reconciliation (currently Test Mode only)
+- Add Playwright coverage for the full merchant approval and checkout state machines
 
-## Routes
+## License
 
-- `GET /api/dashboard`
-- `GET|POST /api/opportunities`
-- `POST /api/opportunities/:id/approve`
-- `GET /api/products?query=...`
-- `POST /api/checkout`
-- `GET /api/audit`
-- `GET /api/health`
-- `POST /api/webhooks/razorpay`
-- `GET|POST /api/store-connection`
-- `GET|PATCH /api/products/manage`
-- `GET|PATCH /api/policy`
-
-## Architecture
-
-The domain logic lives in `lib/domain.ts`. Analytics are derived from the seeded order set; the action is checked against a fixed merchant policy; approval is state-checked; checkout validates product ids, stock-backed catalog entries, and the maximum transaction value; each significant transition writes an audit event.
-
-The remaining production hardening steps are replacing the demo credential/session adapter with a mature identity provider, deriving merchant identity from that session instead of the demo workspace lookup, adding Redis-backed rate limiting and BullMQ workers, completing Razorpay order/payment reconciliation, and adding Playwright coverage for the full state machine. The persistence schema, expanded seed entrypoint, request validation, server-side price protection, Razorpay boundary, webhook verification, and guardrail tests are in place.
-
-## Validation
-
-```bash
-npm run lint
-npm run build
-npm test
-npm run typecheck
-```
-
----
-
-## Development Status (2026-08-29)
-
-### ✅ Complete & Tested
-
-**Merchant Side:**
-- ✅ Authentication (demo login + Google OAuth scaffold)
-- ✅ Dashboard with real metrics (1284 orders, 927 customers, ₹39,577 revenue)
-- ✅ AI-powered opportunity analysis using real data
-- ✅ Guardrail enforcement (policy-bounded actions)
-- ✅ Campaign proposals with audit trail
-- ✅ Real PostgreSQL data persistence
-
-**Consumer Side:**
-- ✅ Authentication and onboarding
-- ✅ Product search with AI recommendations
-- ✅ Shopping cart and checkout flow
-- ✅ Payment processing (Test Mode)
-- ✅ Order confirmation with audit trail
-
-**Infrastructure:**
-- ✅ PostgreSQL connectivity (1284 orders, 927 customers)
-- ✅ Real API routes (all authenticated)
-- ✅ Prisma ORM with proper migrations
-- ✅ Error handling with typed codes
-- ✅ Idempotency for mutations
-- ✅ Webhook signature verification
-
-### 🟡 In Progress
-
-- 🟡 Testing & CI (framework ready, no coverage yet)
-- 🟡 Web search capability (optional for Phase 2)
-- 🟡 Negotiation flows (consumer price requests)
-- 🟡 Approval queue UI (backend ready)
-
-### 📊 Tested Workflows
-
-**Merchant Analysis:**
-```
-Merchant: "Analyze my store"
-→ AI calls: getStoreMetrics, getTopProducts, getProductAffinity
-→ Result: "75% co-purchase rate between Laptop Stand & USB-C Hub"
-→ Propose campaign with 8% discount (within 10% policy limit)
-→ Audit trail records all steps
-```
-
-**Consumer Shopping:**
-```
-Consumer: "I need headphones under ₹4,000"
-→ AI searches: Sonic Pro Headphones (₹3,499)
-→ Consumer adds to cart and checks out
-→ Payment captured, stock decremented
-→ Order confirmed with receipt
-```
-
-### 🚀 Ready for Deployment
-
-AKUMA is now a **functional end-to-end AI commerce platform**. All core flows work with real data:
-- Merchant intelligence and decision support
-- Consumer product discovery and shopping
-- Payment processing and order management
-- Policy enforcement and audit trails
-
-For next steps, see `/STATUS.md` for detailed phase breakdown and `AUDIT.md` for repository analysis.
+No license file is currently included in this repository. Add a `LICENSE` file (e.g. MIT, Apache 2.0) before treating this as open source.

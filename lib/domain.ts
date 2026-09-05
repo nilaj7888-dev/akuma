@@ -93,7 +93,18 @@ const addAudit = (actor: AuditActor, action: string, detail: string, status: Aud
 
 export function dashboardMetrics() {
   const totalRevenue = orders.reduce((sum, order) => sum + order.amount, 0);
-  return { totalRevenue, orders: orders.length, customers: 927, opportunities: opportunities.length || 17, influencedRevenue: 42800, actionsExecuted: opportunities.filter((item) => item.status === "ACTIVE").length + 8, conversionLift: 3.8 };
+  const uniqueCustomers = new Set(orders.map((order) => order.customerId)).size;
+  const activeOpportunities = opportunities.filter((item) => item.status === "ACTIVE");
+  const influencedRevenue = activeOpportunities.reduce((sum, item) => sum + item.expectedRevenue, 0);
+  return {
+    totalRevenue,
+    orders: orders.length,
+    customers: uniqueCustomers,
+    opportunities: opportunities.length,
+    pendingApprovals: opportunities.filter((item) => item.status === "AWAITING_APPROVAL").length,
+    influencedRevenue,
+    actionsExecuted: activeOpportunities.length,
+  };
 }
 
 export function analyze() {

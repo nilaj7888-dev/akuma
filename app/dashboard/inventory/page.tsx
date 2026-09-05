@@ -80,6 +80,7 @@ export default function InventoryPage() {
     lowStock: products.filter((p) => p.stock < 10).length,
     outOfStock: products.filter((p) => p.stock === 0).length,
     totalValue: products.reduce((sum, p) => sum + p.stock * p.price, 0),
+    avgMargin: products.length ? Math.round(products.reduce((sum, p) => sum + p.margin, 0) / products.length) : null,
   };
 
   const getStockStatus = (stock: number) => {
@@ -229,8 +230,8 @@ export default function InventoryPage() {
         <MetricGrid columns={4}>
           <MetricTile label="Total Products" value={stats.total} delta={`${stats.outOfStock} out of stock`} trend="down" />
           <MetricTile label="Low Stock" value={stats.lowStock} delta="Requires attention" trend="down" />
-          <MetricTile label="Inventory Value" value={formatMoney(stats.totalValue)} delta="+8% vs last month" trend="up" />
-          <MetricTile label="Avg Margin" value="24%" delta="+2 pts vs quarter" trend="up" />
+          <MetricTile label="Inventory Value" value={formatMoney(stats.totalValue)} delta="At current stock levels" trend="neutral" />
+          <MetricTile label="Avg Margin" value={stats.avgMargin != null ? `${stats.avgMargin}%` : "—"} delta="Across active products" trend="neutral" />
         </MetricGrid>
 
         {loading ? (
