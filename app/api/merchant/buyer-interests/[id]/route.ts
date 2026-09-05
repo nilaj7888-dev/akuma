@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getPrisma } from "@/lib/db";
+import { resolveMerchant } from "@/lib/resolve-merchant";
 import { z } from "zod";
 
 const responseSchema = z.object({
@@ -19,12 +20,9 @@ export async function GET(request: Request, props: { params: Promise<{ id: strin
   if (!prisma) return NextResponse.json({ error: { code: "AKUMA_DATABASE_REQUIRED", message: "PostgreSQL is required." } }, { status: 503 });
 
   // Get merchant ID
-  const user = await prisma.user.findUnique({
-    where: { id: session.userId },
-    select: { merchantId: true },
-  });
+  const merchant = await resolveMerchant(prisma, session);
 
-  if (!user || !user.merchantId) return NextResponse.json({ error: { code: "AKUMA_MERCHANT_NOT_FOUND", message: "Merchant not found." } }, { status: 404 });
+  if (!merchant) return NextResponse.json({ error: { code: "AKUMA_MERCHANT_NOT_FOUND", message: "Merchant not found." } }, { status: 404 });
 
   const interest = await prisma.buyerInterest.findUnique({
     where: { id: params.id },
@@ -38,7 +36,7 @@ export async function GET(request: Request, props: { params: Promise<{ id: strin
     },
   });
 
-  if (!interest || interest.merchantId !== user.merchantId) {
+  if (!interest || interest.merchantId !== merchant.id) {
     return NextResponse.json({ error: { code: "AKUMA_FORBIDDEN", message: "Interest not found." } }, { status: 404 });
   }
 
@@ -103,18 +101,15 @@ export async function PATCH(request: Request, props: { params: Promise<{ id: str
   if (!prisma) return NextResponse.json({ error: { code: "AKUMA_DATABASE_REQUIRED", message: "PostgreSQL is required." } }, { status: 503 });
 
   // Get merchant ID
-  const user = await prisma.user.findUnique({
-    where: { id: session.userId },
-    select: { merchantId: true },
-  });
+  const merchant = await resolveMerchant(prisma, session);
 
-  if (!user || !user.merchantId) return NextResponse.json({ error: { code: "AKUMA_MERCHANT_NOT_FOUND", message: "Merchant not found." } }, { status: 404 });
+  if (!merchant) return NextResponse.json({ error: { code: "AKUMA_MERCHANT_NOT_FOUND", message: "Merchant not found." } }, { status: 404 });
 
   const interest = await prisma.buyerInterest.findUnique({
     where: { id: params.id },
   });
 
-  if (!interest || interest.merchantId !== user.merchantId) {
+  if (!interest || interest.merchantId !== merchant.id) {
     return NextResponse.json({ error: { code: "AKUMA_FORBIDDEN", message: "Interest not found." } }, { status: 404 });
   }
 
@@ -144,7 +139,7 @@ export async function PATCH(request: Request, props: { params: Promise<{ id: str
   // Audit log
   await prisma.auditLog.create({
     data: {
-      merchantId: user.merchantId,
+      merchantId: merchant.id,
       actorType: "USER",
       actorId: session.userId,
       action: "MERCHANT_OFFER_MADE",

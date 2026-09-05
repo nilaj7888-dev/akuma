@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getPrisma } from "@/lib/db";
+import { resolveMerchant } from "@/lib/resolve-merchant";
 
 // GET /api/merchant/buyer-interests - get merchant's buyer interests with notifications
 export async function GET(request: Request) {
@@ -12,18 +13,15 @@ export async function GET(request: Request) {
   if (!prisma) return NextResponse.json({ error: { code: "AKUMA_DATABASE_REQUIRED", message: "PostgreSQL is required." } }, { status: 503 });
 
   // Get merchant ID from session
-  const user = await prisma.user.findUnique({
-    where: { id: session.userId },
-    select: { merchantId: true },
-  });
+  const merchant = await resolveMerchant(prisma, session);
 
-  if (!user || !user.merchantId) return NextResponse.json({ error: { code: "AKUMA_MERCHANT_NOT_FOUND", message: "Merchant not found." } }, { status: 404 });
+  if (!merchant) return NextResponse.json({ error: { code: "AKUMA_MERCHANT_NOT_FOUND", message: "Merchant not found." } }, { status: 404 });
 
   const { searchParams } = new URL(request.url);
   const pinnedOnly = searchParams.get("pinned") === "true";
   const status = searchParams.get("status");
 
-  const where: Record<string, unknown> = { merchantId: user.merchantId };
+  const where: Record<string, unknown> = { merchantId: merchant.id };
   if (pinnedOnly) where.notificationPinned = true;
   if (status) where.status = status;
 

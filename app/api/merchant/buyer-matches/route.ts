@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getPrisma } from "@/lib/db";
+import { resolveMerchant } from "@/lib/resolve-merchant";
 import { haversineDistanceKm } from "@/lib/geo";
 
 // Check if buyer is within delivery range
@@ -57,8 +58,10 @@ export async function GET() {
   const prisma = getPrisma();
   if (!prisma) return NextResponse.json({ error: "Database error" }, { status: 503 });
 
-  const user = await prisma.user.findUnique({ where: { id: session.userId || "" } });
-  const merchant = user ? await prisma.merchant.findUnique({ where: { id: user.merchantId || "" } }) : null;
+  const resolved = await resolveMerchant(prisma, session);
+  const merchant = resolved
+    ? await prisma.merchant.findUnique({ where: { id: resolved.id }, select: { id: true, latitude: true, longitude: true, deliveryRadius: true } })
+    : null;
   if (!merchant) return NextResponse.json({ error: "Merchant not found" }, { status: 404 });
 
   // Get all buyer interests

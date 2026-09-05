@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getPrisma } from "@/lib/db";
+import { resolveMerchant } from "@/lib/resolve-merchant";
 
 // PATCH /api/merchant/notifications/[id]/read - mark notification as read
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -17,12 +18,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   try {
     const resolvedParams = await params;
 
-    const user = await prisma.user.findUnique({
-      where: { id: session.userId },
-      select: { merchantId: true },
-    });
+    const merchant = await resolveMerchant(prisma, session);
 
-    if (!user || !user.merchantId)
+    if (!merchant)
       return NextResponse.json({ error: { code: "AKUMA_MERCHANT_NOT_FOUND", message: "Merchant not found." } }, { status: 404 });
 
     const notification = await prisma.notification.findUnique({
@@ -32,7 +30,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     if (!notification)
       return NextResponse.json({ error: { code: "AKUMA_NOT_FOUND", message: "Notification not found." } }, { status: 404 });
 
-    if (notification.merchantId !== user.merchantId)
+    if (notification.merchantId !== merchant.id)
       return NextResponse.json({ error: { code: "AKUMA_FORBIDDEN", message: "Cannot access this notification." } }, { status: 403 });
 
     const updated = await prisma.notification.update({
@@ -72,12 +70,9 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
   try {
     const resolvedParams = await params;
 
-    const user = await prisma.user.findUnique({
-      where: { id: session.userId },
-      select: { merchantId: true },
-    });
+    const merchant = await resolveMerchant(prisma, session);
 
-    if (!user || !user.merchantId)
+    if (!merchant)
       return NextResponse.json({ error: { code: "AKUMA_MERCHANT_NOT_FOUND", message: "Merchant not found." } }, { status: 404 });
 
     const notification = await prisma.notification.findUnique({
@@ -87,7 +82,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
     if (!notification)
       return NextResponse.json({ error: { code: "AKUMA_NOT_FOUND", message: "Notification not found." } }, { status: 404 });
 
-    if (notification.merchantId !== user.merchantId)
+    if (notification.merchantId !== merchant.id)
       return NextResponse.json({ error: { code: "AKUMA_FORBIDDEN", message: "Cannot delete this notification." } }, { status: 403 });
 
     await prisma.notification.delete({

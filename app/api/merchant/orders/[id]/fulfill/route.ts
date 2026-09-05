@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getPrisma } from "@/lib/db";
+import { resolveMerchant } from "@/lib/resolve-merchant";
 
 // PATCH /api/merchant/orders/[id]/fulfill - update order fulfillment status
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -18,12 +19,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const resolvedParams = await params;
     const data = await request.json();
 
-    const user = await prisma.user.findUnique({
-      where: { id: session.userId },
-      select: { merchantId: true },
-    });
+    const merchant = await resolveMerchant(prisma, session);
 
-    if (!user || !user.merchantId)
+    if (!merchant)
       return NextResponse.json({ error: { code: "AKUMA_MERCHANT_NOT_FOUND", message: "Merchant not found." } }, { status: 404 });
 
     // Verify order belongs to merchant
@@ -35,7 +33,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     if (!order)
       return NextResponse.json({ error: { code: "AKUMA_NOT_FOUND", message: "Order not found." } }, { status: 404 });
 
-    if (order.merchantId !== user.merchantId)
+    if (order.merchantId !== merchant.id)
       return NextResponse.json({ error: { code: "AKUMA_FORBIDDEN", message: "Cannot access this order." } }, { status: 403 });
 
     // Validate status transition
@@ -67,7 +65,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     // Create audit log
     await prisma.auditLog.create({
       data: {
-        merchantId: user.merchantId,
+        merchantId: merchant.id,
         actorType: "USER",
         actorId: session.userId,
         action: "ORDER_STATUS_UPDATE",
@@ -99,7 +97,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
       await prisma.notification.create({
         data: {
-          merchantId: user.merchantId,
+          merchantId: merchant.id,
           type: notificationTypeMap[newStatus] as any,
           title: titleMap[newStatus],
           message: messageMap[newStatus],

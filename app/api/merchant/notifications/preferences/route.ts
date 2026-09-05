@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getPrisma } from "@/lib/db";
+import { resolveMerchant } from "@/lib/resolve-merchant";
 import { z } from "zod";
 import type { NotificationType } from "@prisma/client";
 
@@ -26,16 +27,13 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: { code: "AKUMA_DATABASE_REQUIRED", message: "PostgreSQL is required." } }, { status: 503 });
 
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: session.userId },
-      select: { merchantId: true },
-    });
+    const merchant = await resolveMerchant(prisma, session);
 
-    if (!user || !user.merchantId)
+    if (!merchant)
       return NextResponse.json({ error: { code: "AKUMA_MERCHANT_NOT_FOUND", message: "Merchant not found." } }, { status: 404 });
 
     const preferences = await prisma.notificationPreference.findMany({
-      where: { merchantId: user.merchantId },
+      where: { merchantId: merchant.id },
     });
 
     return NextResponse.json({
@@ -71,18 +69,15 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: { code: "AKUMA_DATABASE_REQUIRED", message: "PostgreSQL is required." } }, { status: 503 });
 
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: session.userId },
-      select: { merchantId: true },
-    });
+    const merchant = await resolveMerchant(prisma, session);
 
-    if (!user || !user.merchantId)
+    if (!merchant)
       return NextResponse.json({ error: { code: "AKUMA_MERCHANT_NOT_FOUND", message: "Merchant not found." } }, { status: 404 });
 
     const preference = await prisma.notificationPreference.upsert({
       where: {
         merchantId_type: {
-          merchantId: user.merchantId,
+          merchantId: merchant.id,
           type: parsed.data.type as any,
         },
       },
@@ -94,7 +89,7 @@ export async function PUT(request: Request) {
         threshold: parsed.data.threshold,
       },
       create: {
-        merchantId: user.merchantId,
+        merchantId: merchant.id,
         type: parsed.data.type as any,
         enabled: parsed.data.enabled,
         push: parsed.data.push,

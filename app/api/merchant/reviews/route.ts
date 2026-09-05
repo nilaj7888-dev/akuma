@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getPrisma } from "@/lib/db";
+import { resolveMerchant } from "@/lib/resolve-merchant";
 import { z } from "zod";
 
 const reviewQuerySchema = z.object({
@@ -39,17 +40,14 @@ export async function GET(request: Request) {
     if (!parsed.success)
       return NextResponse.json({ error: { code: "AKUMA_VALIDATION_ERROR", message: "Invalid query params." } }, { status: 400 });
 
-    const user = await prisma.user.findUnique({
-      where: { id: session.userId },
-      select: { merchantId: true },
-    });
+    const merchant = await resolveMerchant(prisma, session);
 
-    if (!user || !user.merchantId)
+    if (!merchant)
       return NextResponse.json({ error: { code: "AKUMA_MERCHANT_NOT_FOUND", message: "Merchant not found." } }, { status: 404 });
 
     const { productId, status, limit, offset } = parsed.data;
 
-    const where: any = { merchantId: user.merchantId };
+    const where: any = { merchantId: merchant.id };
     if (productId) where.productId = productId;
     if (status) where.status = status;
 
@@ -67,7 +65,7 @@ export async function GET(request: Request) {
     // Calculate rating distribution
     const ratingGroups = await prisma.review.groupBy({
       by: ["rating"],
-      where: { merchantId: user.merchantId, status: "PUBLISHED" },
+      where: { merchantId: merchant.id, status: "PUBLISHED" },
       _count: true,
     });
 
@@ -102,19 +100,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: { code: "AKUMA_DATABASE_REQUIRED", message: "PostgreSQL is required." } }, { status: 503 });
 
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: session.userId },
-      select: { merchantId: true },
-    });
+    const merchant = await resolveMerchant(prisma, session);
 
-    if (!user || !user.merchantId)
+    if (!merchant)
       return NextResponse.json({ error: { code: "AKUMA_MERCHANT_NOT_FOUND", message: "Merchant not found." } }, { status: 404 });
 
     const review = await prisma.review.findUnique({
       where: { id: parsed.data.reviewId },
     });
 
-    if (!review || review.merchantId !== user.merchantId)
+    if (!review || review.merchantId !== merchant.id)
       return NextResponse.json({ error: { code: "AKUMA_NOT_FOUND", message: "Review not found." } }, { status: 404 });
 
     const updated = await prisma.review.update({

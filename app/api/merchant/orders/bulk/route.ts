@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getPrisma } from "@/lib/db";
+import { resolveMerchant } from "@/lib/resolve-merchant";
 import { z } from "zod";
 
 const bulkOperationSchema = z.object({
@@ -27,19 +28,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: { code: "AKUMA_DATABASE_REQUIRED", message: "PostgreSQL is required." } }, { status: 503 });
 
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: session.userId },
-      select: { merchantId: true },
-    });
+    const merchant = await resolveMerchant(prisma, session);
 
-    if (!user || !user.merchantId)
+    if (!merchant)
       return NextResponse.json({ error: { code: "AKUMA_MERCHANT_NOT_FOUND", message: "Merchant not found." } }, { status: 404 });
 
     // Verify all orders belong to merchant
     const orders = await prisma.order.findMany({
       where: {
         id: { in: parsed.data.orderIds },
-        merchantId: user.merchantId,
+        merchantId: merchant.id,
       },
     });
 
@@ -72,7 +70,7 @@ export async function POST(request: Request) {
     // Audit log
     await prisma.auditLog.create({
       data: {
-        merchantId: user.merchantId,
+        merchantId: merchant.id,
         actorType: "USER",
         actorId: session.userId,
         action: "BULK_ORDER_OPERATION",

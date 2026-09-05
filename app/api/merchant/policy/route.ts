@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getPrisma } from "@/lib/db";
+import { resolveMerchant } from "@/lib/resolve-merchant";
 
 export async function GET() {
   const session = await getSession();
@@ -9,8 +10,10 @@ export async function GET() {
   const prisma = getPrisma();
   if (!prisma) return NextResponse.json({ error: "Database error" }, { status: 503 });
 
-  const user = await prisma.user.findUnique({ where: { id: session.userId || "" } });
-  const merchant = user ? await prisma.merchant.findUnique({ where: { id: user.merchantId || "" } }) : null;
+  const resolved = await resolveMerchant(prisma, session);
+  const merchant = resolved
+    ? await prisma.merchant.findUnique({ where: { id: resolved.id }, select: { id: true, deliveryRadius: true, location: true, latitude: true, longitude: true } })
+    : null;
   if (!merchant) return NextResponse.json({ error: "Merchant not found" }, { status: 404 });
 
   const policy = await prisma.policy.findUnique({ where: { merchantId: merchant.id } });
@@ -31,8 +34,10 @@ export async function POST(request: Request) {
   const prisma = getPrisma();
   if (!prisma) return NextResponse.json({ error: "Database error" }, { status: 503 });
 
-  const user = await prisma.user.findUnique({ where: { id: session.userId || "" } });
-  const merchant = user ? await prisma.merchant.findUnique({ where: { id: user.merchantId || "" } }) : null;
+  const resolved = await resolveMerchant(prisma, session);
+  const merchant = resolved
+    ? await prisma.merchant.findUnique({ where: { id: resolved.id }, select: { id: true, deliveryRadius: true } })
+    : null;
   if (!merchant) return NextResponse.json({ error: "Merchant not found" }, { status: 404 });
 
   const body = await request.json() as {
@@ -72,7 +77,7 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json({
-    deliveryRadius: merchant.deliveryRadius,
+    deliveryRadius: body.deliveryRadius || merchant.deliveryRadius,
     negotiationPreference: policy.negotiationPreference,
     primaryGoal: policy.primaryGoal,
   });

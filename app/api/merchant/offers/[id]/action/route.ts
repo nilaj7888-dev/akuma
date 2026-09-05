@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getPrisma } from "@/lib/db";
 import { getSession } from "@/lib/auth";
+import { resolveMerchant } from "@/lib/resolve-merchant";
 import { sendEmail } from "@/lib/email";
 
 export async function POST(request: Request) {
@@ -23,13 +24,10 @@ export async function POST(request: Request) {
   const prisma = getPrisma();
   if (!prisma) return NextResponse.json({ error: "Database error" }, { status: 503 });
 
-  // Get user and verify merchant ownership
-  const user = await prisma.user.findUnique({
-    where: { id: session.userId },
-    include: { merchant: true },
-  });
+  // Verify merchant ownership
+  const merchant = await resolveMerchant(prisma, session);
 
-  if (!user || !user.merchantId) {
+  if (!merchant) {
     return NextResponse.json({ error: "Merchant not found" }, { status: 403 });
   }
 
@@ -43,7 +41,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Offer not found" }, { status: 404 });
   }
 
-  if (negotiation.merchantId !== user.merchantId) {
+  if (negotiation.merchantId !== merchant.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
   }
 
@@ -71,7 +69,7 @@ export async function POST(request: Request) {
     // Create audit log
     await prisma.auditLog.create({
       data: {
-        merchantId: user.merchantId,
+        merchantId: merchant.id,
         actorType: "USER",
         action: "OFFER_ACCEPTED",
         resourceType: "NEGOTIATION",
@@ -91,7 +89,7 @@ export async function POST(request: Request) {
 
     await prisma.auditLog.create({
       data: {
-        merchantId: user.merchantId,
+        merchantId: merchant.id,
         actorType: "USER",
         action: "OFFER_REJECTED",
         resourceType: "NEGOTIATION",
@@ -118,7 +116,7 @@ export async function POST(request: Request) {
 
     await prisma.auditLog.create({
       data: {
-        merchantId: user.merchantId,
+        merchantId: merchant.id,
         actorType: "USER",
         action: "COUNTER_OFFERED",
         resourceType: "NEGOTIATION",
@@ -143,7 +141,7 @@ export async function POST(request: Request) {
   // Create buyer notification
   await prisma.notification.create({
     data: {
-      merchantId: user.merchantId,
+      merchantId: merchant.id,
       type: action === "ACCEPT" ? "BUYER_INTEREST_ACCEPTED" : "MESSAGE_RECEIVED",
       title: `Offer ${action.toLowerCase()}ed`,
       message: emailMessage,

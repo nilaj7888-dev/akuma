@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getPrisma } from "@/lib/db";
+import { resolveMerchant } from "@/lib/resolve-merchant";
 
 // GET /api/merchant/notifications/stream - server-sent events for real-time notifications
 export async function GET(request: Request) {
@@ -16,18 +17,15 @@ export async function GET(request: Request) {
 
   try {
     // Get merchant ID from authenticated user
-    const user = await prisma.user.findUnique({
-      where: { id: session.userId },
-      select: { merchantId: true },
-    });
+    const merchant = await resolveMerchant(prisma, session);
 
-    if (!user || !user.merchantId)
+    if (!merchant)
       return NextResponse.json({ error: { code: "AKUMA_MERCHANT_NOT_FOUND", message: "Merchant not found." } }, { status: 404 });
 
     // Return simple polling endpoint for now (SSE can be implemented later)
     // This returns the current unread notification count
     const unreadCount = await prisma.notification.count({
-      where: { merchantId: user.merchantId, read: false },
+      where: { merchantId: merchant.id, read: false },
     });
 
     // Also get recent critical notifications
@@ -36,7 +34,7 @@ export async function GET(request: Request) {
 
     const recentCritical = await prisma.notification.findMany({
       where: {
-        merchantId: user.merchantId,
+        merchantId: merchant.id,
         type: { in: criticalTypes as any },
         OR: [
           { read: false },

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getPrisma } from "@/lib/db";
+import { resolveMerchant } from "@/lib/resolve-merchant";
 
 // GET /api/merchant/analytics/overview - merchant analytics overview
 export async function GET(request: Request) {
@@ -15,12 +16,9 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: { code: "AKUMA_DATABASE_REQUIRED", message: "PostgreSQL is required." } }, { status: 503 });
 
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: session.userId },
-      select: { merchantId: true },
-    });
+    const merchant = await resolveMerchant(prisma, session);
 
-    if (!user || !user.merchantId)
+    if (!merchant)
       return NextResponse.json({ error: { code: "AKUMA_MERCHANT_NOT_FOUND", message: "Merchant not found." } }, { status: 404 });
 
     // Date ranges
@@ -31,7 +29,7 @@ export async function GET(request: Request) {
     // Total revenue (last 30 days)
     const orders = await prisma.order.findMany({
       where: {
-        merchantId: user.merchantId,
+        merchantId: merchant.id,
         status: { in: ["PAID", "PROCESSING", "COMPLETED"] as any },
         createdAt: { gte: thirtyDaysAgo },
       },
@@ -54,7 +52,7 @@ export async function GET(request: Request) {
     const orderItems = await prisma.orderItem.findMany({
       where: {
         order: {
-          merchantId: user.merchantId,
+          merchantId: merchant.id,
           status: { in: ["PAID", "PROCESSING", "COMPLETED"] as any },
           createdAt: { gte: thirtyDaysAgo },
         },
@@ -89,7 +87,7 @@ export async function GET(request: Request) {
     // Buyer interests summary
     const buyerInterests = await prisma.buyerInterest.findMany({
       where: {
-        merchantId: user.merchantId,
+        merchantId: merchant.id,
         createdAt: { gte: thirtyDaysAgo },
       },
     });
@@ -100,7 +98,7 @@ export async function GET(request: Request) {
     // Low stock products
     const lowStockProducts = await prisma.product.findMany({
       where: {
-        merchantId: user.merchantId,
+        merchantId: merchant.id,
         active: true,
         stock: { lte: 10 },
       },
