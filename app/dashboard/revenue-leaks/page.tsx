@@ -5,7 +5,6 @@ import { AlertTriangle, ArrowRight, TrendingDown } from "lucide-react";
 import { PageTransition, FadeIn, StaggerContainer, StaggerItem } from "@/components/ui/animations";
 import { MetricTile, MetricGrid } from "@/components/ui/metric-tile";
 import { Card, CardBody } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { CardSkeleton } from "@/components/ui/loading-skeleton";

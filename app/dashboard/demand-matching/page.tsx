@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { formatMoney } from "@/lib/format";
+import { showToast } from "@/components/toast";
 
 interface BuyerDemandMatch {
   id: string;
@@ -58,10 +59,11 @@ export default function DemandMatchingPage() {
   const [potentialMatches, setPotentialMatches] = useState<BuyerDemandMatch[]>([]);
   const [metrics, setMetrics] = useState<Metrics>({ totalMatches: 0, highConfidence: 0, potentialRevenue: 0, readyToAct: 0 });
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [activeTab, setActiveTab] = useState<"opportunities" | "buyers">("opportunities");
 
-  useEffect(() => {
-    const loadData = async () => {
+  const loadData = async () => {
+      setLoadError(false);
       try {
         const res = await fetch("/api/dashboard/demand-matching");
         if (res.ok) {
@@ -74,89 +76,18 @@ export default function DemandMatchingPage() {
         }
       } catch (error) {
         console.error("Error loading demand matching data:", error);
-        // Fallback mock data
-        const mockMatches: BuyerDemandMatch[] = [
-          {
-            id: "bm_1",
-            buyerId: "buyer_1",
-            buyerName: "Tech Solutions Inc.",
-            buyerEmail: "procurement@techsolutions.com",
-            originalProduct: {
-              name: "Lenovo Laptop ThinkPad X1",
-              merchant: "Another Merchant",
-              price: 52000,
-            },
-            matchedProduct: {
-              id: "prod_1",
-              name: "Lenovo Laptop Pro",
-              price: 49000,
-            },
-            quantity: 5,
-            preferredPrice: 235000,
-            matchScore: 85,
-            matchReasons: ["Category matches", "Budget compatible", "Quantity: 5 units"],
-            createdAt: "2026-09-03T10:30:00Z",
-            status: "OPEN",
-          },
-          {
-            id: "bm_2",
-            buyerId: "buyer_2",
-            buyerName: "Office Supplies Co.",
-            buyerEmail: "orders@officesupplies.co",
-            originalProduct: {
-              name: "USB-C Hub 7-in-1",
-              merchant: "Different Supplier",
-              price: 2500,
-            },
-            matchedProduct: {
-              id: "prod_2",
-              name: "USB-C Hub Pro",
-              price: 2200,
-            },
-            quantity: 20,
-            preferredPrice: 44000,
-            matchScore: 78,
-            matchReasons: ["Category matches", "Product name/keyword matches"],
-            createdAt: "2026-09-02T14:20:00Z",
-            status: "OPEN",
-          },
-          {
-            id: "bm_3",
-            buyerId: "buyer_3",
-            buyerName: "Retail Chain Bangalore",
-            buyerEmail: "purchasing@retailchain.in",
-            originalProduct: {
-              name: "Wireless Mouse Pro",
-              merchant: "Competitor Store",
-              price: 1200,
-            },
-            matchedProduct: {
-              id: "prod_3",
-              name: "Wireless Mouse Premium",
-              price: 1100,
-            },
-            quantity: 100,
-            preferredPrice: 110000,
-            matchScore: 92,
-            matchReasons: ["Category matches", "Budget compatible", "Large quantity"],
-            createdAt: "2026-09-01T09:15:00Z",
-            status: "OPEN",
-          },
-        ];
-
-        setPotentialMatches(mockMatches);
-        setMetrics({
-          totalMatches: 12,
-          highConfidence: 8,
-          potentialRevenue: 248500,
-          readyToAct: 3,
-        });
+        setOpportunities([]);
+        setPotentialMatches([]);
+        setMetrics({ totalMatches: 0, highConfidence: 0, potentialRevenue: 0, readyToAct: 0 });
+        setLoadError(true);
       } finally {
         setLoading(false);
       }
     };
 
+  useEffect(() => {
     void loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleCreateOffer = async (match: BuyerDemandMatch) => {
@@ -165,14 +96,18 @@ export default function DemandMatchingPage() {
   };
 
   const handleAnalyzeMore = async () => {
-    // Trigger AI analysis of new matches
-    const res = await fetch("/api/ai/analyze-demand", { method: "POST" });
-    if (res.ok) {
-      alert("AI analysis started. Check back in a moment for new matches.");
-      // Refresh data after short delay using router.refresh() instead of reload
-      setTimeout(() => {
-        router.refresh();
-      }, 2000);
+    try {
+      const res = await fetch("/api/ai/analyze-demand", { method: "POST" });
+      if (res.ok) {
+        showToast("Scanning marketplace activity for new matches...", "info");
+        setTimeout(() => {
+          void loadData();
+        }, 2000);
+      } else {
+        showToast("Couldn't start the analysis. Try again in a moment.", "error");
+      }
+    } catch {
+      showToast("Couldn't start the analysis. Try again in a moment.", "error");
     }
   };
 
@@ -215,12 +150,13 @@ export default function DemandMatchingPage() {
           </Button>
         </div>
 
-        <MetricGrid columns={4}>
-          <MetricTile label="Total Matches" value={metrics.totalMatches} icon={Users} delta={`${metrics.highConfidence} high confidence`} trend="up" />
-          <MetricTile label="Potential Revenue" value={formatMoney(metrics.potentialRevenue)} icon={TrendingUp} delta="+₹1.2L this week" trend="up" />
-          <MetricTile label="Ready to Act" value={metrics.readyToAct} icon={Target} delta="Immediate opportunities" trend="neutral" />
-          <MetricTile label="Match Rate" value="64%" icon={CheckCircle} delta="+8% vs last month" trend="up" />
-        </MetricGrid>
+        {!loading && !loadError && metrics.totalMatches > 0 && (
+          <MetricGrid columns={3}>
+            <MetricTile label="Total Matches" value={metrics.totalMatches} icon={Users} delta={`${metrics.highConfidence} high confidence`} trend="up" />
+            <MetricTile label="Potential Revenue" value={formatMoney(metrics.potentialRevenue)} icon={TrendingUp} delta="Across open matches" trend="up" />
+            <MetricTile label="Ready to Act" value={metrics.readyToAct} icon={Target} delta="Immediate opportunities" trend="neutral" />
+          </MetricGrid>
+        )}
 
         <div className="section-heading">
           <div>
@@ -241,6 +177,8 @@ export default function DemandMatchingPage() {
           <div style={{ textAlign: "center", padding: "60px 20px" }}>
             <p style={{ color: "var(--muted)" }}>Loading buyer demand intelligence...</p>
           </div>
+        ) : loadError ? (
+          <EmptyState icon={AlertCircle} title="Couldn't load demand matches" description="The request failed. Check your connection and try again." action={{ label: "Retry", onClick: () => loadData() }} />
         ) : activeTab === "buyers" && potentialMatches.length > 0 ? (
           <StaggerContainer delay={0.08}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(400px, 1fr))", gap: "20px" }}>
@@ -327,9 +265,6 @@ export default function DemandMatchingPage() {
                           <Button variant="primary" size="sm" style={{ flex: 1 }} onClick={() => handleCreateOffer(match)}>
                             Create Offer
                           </Button>
-                          <Button variant="ghost" size="sm">
-                            View Details
-                          </Button>
                         </div>
                       </CardBody>
                     </Card>
@@ -371,14 +306,9 @@ export default function DemandMatchingPage() {
                         </div>
                       </div>
 
-                      <div style={{ display: "flex", gap: "8px" }}>
-                        <Button variant="primary" size="sm" style={{ flex: 1 }}>
-                          Take Action
-                        </Button>
-                        <Button variant="ghost" size="sm">
-                          Dismiss
-                        </Button>
-                      </div>
+                      <Button variant="primary" size="sm" style={{ width: "100%" }} onClick={() => router.push("/dashboard/opportunities")}>
+                        Review in Opportunities
+                      </Button>
                     </CardBody>
                   </Card>
                 </StaggerItem>
