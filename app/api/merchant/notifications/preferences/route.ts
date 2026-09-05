@@ -83,7 +83,7 @@ export async function PUT(request: Request) {
       where: {
         merchantId_type: {
           merchantId: user.merchantId,
-          type: parsed.data.type as any,
+          type: parsed.data.type as NotificationType,
         },
       },
       update: {
@@ -95,7 +95,7 @@ export async function PUT(request: Request) {
       },
       create: {
         merchantId: user.merchantId,
-        type: parsed.data.type as any,
+        type: parsed.data.type as NotificationType,
         enabled: parsed.data.enabled,
         push: parsed.data.push,
         email: parsed.data.email,

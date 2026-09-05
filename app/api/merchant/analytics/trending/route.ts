@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getPrisma } from "@/lib/db";
+import type { OrderStatus, Product } from "@prisma/client";
 
 // GET /api/merchant/analytics/trending - get trending products
 export async function GET(request: Request) {
@@ -32,7 +33,7 @@ export async function GET(request: Request) {
       where: {
         order: {
           merchantId: user.merchantId,
-          status: { in: ["PAID", "PROCESSING", "COMPLETED"] as any },
+          status: { in: ["PAID", "PROCESSING", "COMPLETED"] as OrderStatus[] },
           createdAt: { gte: last7Days },
         },
       },
@@ -44,11 +45,17 @@ export async function GET(request: Request) {
       where: {
         order: {
           merchantId: user.merchantId,
-          status: { in: ["PAID", "PROCESSING", "COMPLETED"] as any },
+          status: { in: ["PAID", "PROCESSING", "COMPLETED"] as OrderStatus[] },
           createdAt: { gte: previous7Days, lt: last7Days },
         },
       },
     });
+
+    interface RecentSaleEntry {
+      quantity: number;
+      revenue: number;
+      product: Product;
+    }
 
     // Calculate recent sales by product
     const recentSales = recentItems.reduce((acc, item) => {
@@ -58,7 +65,7 @@ export async function GET(request: Request) {
       acc[item.productId].quantity += item.quantity;
       acc[item.productId].revenue += item.total;
       return acc;
-    }, {} as Record<string, any>);
+    }, {} as Record<string, RecentSaleEntry>);
 
     // Calculate previous sales by product
     const previousSales = previousItems.reduce((acc, item) => {
@@ -69,7 +76,7 @@ export async function GET(request: Request) {
 
     // Calculate growth and identify trending products
     const trendingProducts = Object.entries(recentSales)
-      .map(([productId, data]: [string, any]) => {
+      .map(([productId, data]: [string, RecentSaleEntry]) => {
         const previousQty = previousSales[productId] || 0;
         const growth = previousQty > 0
           ? Math.round(((data.quantity - previousQty) / previousQty) * 100)
@@ -100,18 +107,23 @@ export async function GET(request: Request) {
       include: { product: true },
     });
 
+    interface InterestEntry {
+      count: number;
+      product: Product;
+    }
+
     const interestsByProduct = recentInterests.reduce((acc, interest) => {
       if (!acc[interest.productId]) {
         acc[interest.productId] = { count: 0, product: interest.product };
       }
       acc[interest.productId].count += 1;
       return acc;
-    }, {} as Record<string, any>);
+    }, {} as Record<string, InterestEntry>);
 
     const topInterests = Object.values(interestsByProduct)
-      .sort((a: any, b: any) => b.count - a.count)
+      .sort((a, b) => b.count - a.count)
       .slice(0, 5)
-      .map((item: any) => ({
+      .map((item) => ({
         productId: item.product.id,
         productName: item.product.name,
         interestCount: item.count,

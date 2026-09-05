@@ -1,6 +1,16 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getPrisma } from "@/lib/db";
+import type { Prisma } from "@prisma/client";
+
+interface NegotiationMessage {
+  role: "CUSTOMER" | "MERCHANT" | "AI" | "ACCEPTANCE";
+  content: string;
+  timestamp: string;
+  acceptedBy?: "CUSTOMER" | "MERCHANT";
+  acceptedPrice?: number;
+  suggestedPrice?: number;
+}
 
 export async function GET(
   request: Request,
@@ -118,7 +128,7 @@ export async function POST(
         id: true,
         userId: true,
         merchantId: true,
-        messages: true as any,
+        messages: true,
       },
     });
 
@@ -143,10 +153,10 @@ export async function POST(
     }
 
     // Add message to conversation
-    const messages = Array.isArray((negotiation as any).messages)
-      ? (negotiation as any).messages
+    const messages: NegotiationMessage[] = Array.isArray(negotiation.messages)
+      ? (negotiation.messages as unknown as NegotiationMessage[])
       : [];
-    const newMessage = {
+    const newMessage: NegotiationMessage = {
       role: isCustomer ? "CUSTOMER" : "MERCHANT",
       content: content.trim(),
       timestamp: new Date().toISOString(),
@@ -157,9 +167,9 @@ export async function POST(
     // Update negotiation with new message
     const updated = await prisma.negotiation.update({
       where: { id },
-      data: { messages: messages as any },
+      data: { messages: messages as unknown as Prisma.InputJsonValue },
       select: {
-        messages: true as any,
+        messages: true,
       },
     });
 
@@ -181,7 +191,7 @@ export async function POST(
 
       if (aiResponse.ok) {
         const aiData = await aiResponse.json();
-        const aiMessage = {
+        const aiMessage: NegotiationMessage = {
           role: "AI",
           content: aiData.content || aiData.message || "I'll consider your offer.",
           timestamp: new Date().toISOString(),
@@ -193,7 +203,7 @@ export async function POST(
         // Update with AI response
         await prisma.negotiation.update({
           where: { id },
-          data: { messages: messages as any },
+          data: { messages: messages as unknown as Prisma.InputJsonValue },
         });
 
         return NextResponse.json({
@@ -213,7 +223,7 @@ export async function POST(
     return NextResponse.json({
       success: true,
       message: newMessage,
-      messages: (updated as any).messages,
+      messages: updated.messages,
     });
   } catch (error) {
     console.error("Failed to add message:", error);

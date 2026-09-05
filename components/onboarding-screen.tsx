@@ -40,7 +40,7 @@ export function OnboardingScreen({ role, onComplete, onBack }: { role: Role; onC
   const isLocationStep = role === "MERCHANT" && step.field === "location";
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [resolvingLocation, setResolvingLocation] = useState(false);
-  const sessionTokenRef = useRef(`${Date.now()}_${Math.random().toString(36).slice(2)}`);
+  const [sessionToken] = useState(() => `${Date.now()}_${Math.random().toString(36).slice(2)}`);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Get current value from answers map, or from context if already saved
@@ -67,7 +67,7 @@ export function OnboardingScreen({ role, onComplete, onBack }: { role: Role; onC
     }
     searchDebounceRef.current = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/merchant/location?q=${encodeURIComponent(q)}&sessionToken=${sessionTokenRef.current}`);
+        const res = await fetch(`/api/merchant/location?q=${encodeURIComponent(q)}&sessionToken=${sessionToken}`);
         if (res.ok) {
           const data = await res.json() as { predictions: Prediction[] };
           setPredictions(data.predictions || []);
@@ -84,7 +84,7 @@ export function OnboardingScreen({ role, onComplete, onBack }: { role: Role; onC
       const res = await fetch("/api/merchant/location", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ placeId: prediction.place_id, sessionToken: sessionTokenRef.current }),
+        body: JSON.stringify({ placeId: prediction.place_id, sessionToken: sessionToken }),
       });
       if (res.ok) {
         const data = await res.json() as { location: string };

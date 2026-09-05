@@ -94,8 +94,9 @@ export async function POST(request: Request) {
       accountType: user.accountType,
       onboardingComplete: user.onboardingComplete,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("OTP verify error:", error);
-    return NextResponse.json({ error: error.message || "Verification failed" }, { status: 500 });
+    const message = (error instanceof Error && error.message) || "Verification failed";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

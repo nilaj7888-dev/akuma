@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getPrisma } from "@/lib/db";
 import { z } from "zod";
+import type { Prisma } from "@prisma/client";
 
 const reviewQuerySchema = z.object({
   productId: z.string().optional(),
@@ -49,7 +50,7 @@ export async function GET(request: Request) {
 
     const { productId, status, limit, offset } = parsed.data;
 
-    const where: any = { merchantId: user.merchantId };
+    const where: Prisma.ReviewWhereInput = { merchantId: user.merchantId };
     if (productId) where.productId = productId;
     if (status) where.status = status;
 

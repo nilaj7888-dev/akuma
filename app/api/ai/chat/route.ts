@@ -265,14 +265,13 @@ export async function POST(request: Request) {
           getCustomerSegments("demo"),
         ]);
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         merchantContext = `
 REAL MERCHANT DATA:
-- Revenue: ${(metrics.result as any)?.totalRevenue || 0}
+- Revenue: ${(metrics.result as { totalRevenue: number } | null)?.totalRevenue || 0}
 - Opportunities: ${Array.isArray(opportunities.result) ? opportunities.result.length : 0}
 - Revenue leaks: ${Array.isArray(leaks.result) ? leaks.result.length : 0}
 - Churn risk customers: ${Array.isArray(churn.result) ? churn.result.length : 0}
-- Customer segments: ${JSON.stringify((segments.result as any))}
+- Customer segments: ${JSON.stringify(segments.result)}
 `;
         console.log("[AKUMA Chat] Merchant data fetched successfully");
       } catch (dataError) {

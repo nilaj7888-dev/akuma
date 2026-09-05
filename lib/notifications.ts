@@ -1,4 +1,4 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, type NotificationType, type Prisma } from "@prisma/client";
 
 /**
  * Creates a notification for a merchant
@@ -14,7 +14,7 @@ export async function createNotification(
     resourceType: string;
     resourceId: string;
     actionUrl?: string;
-    metadata?: Record<string, any>;
+    metadata?: Prisma.InputJsonObject;
   }
 ) {
   try {
@@ -44,10 +44,10 @@ export async function createNotification(
 export async function markNotificationsAsRead(
   prisma: PrismaClient,
   merchantId: string,
-  type?: string
+  type?: NotificationType
 ) {
   try {
-    const where: any = { merchantId, read: false };
+    const where: Prisma.NotificationWhereInput = { merchantId, read: false };
     if (type) where.type = type;
 
     const result = await prisma.notification.updateMany({
@@ -93,7 +93,7 @@ export async function getUnreadNotificationCount(
 export async function getCriticalNotifications(
   prisma: PrismaClient,
   merchantId: string,
-  types: string[] = ["BUYER_INTEREST_NEW", "ORDER_CREATED", "PAYMENT_RECEIVED", "LOW_STOCK"]
+  types: NotificationType[] = ["BUYER_INTEREST_NEW", "ORDER_CREATED", "PAYMENT_RECEIVED", "LOW_STOCK"]
 ) {
   try {
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -101,7 +101,7 @@ export async function getCriticalNotifications(
     const notifications = await prisma.notification.findMany({
       where: {
         merchantId,
-        type: { in: types as any },
+        type: { in: types },
         OR: [
           { read: false },
           { createdAt: { gte: twentyFourHoursAgo } },

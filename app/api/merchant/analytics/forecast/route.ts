@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getPrisma } from "@/lib/db";
+import type { OrderStatus } from "@prisma/client";
 
 // GET /api/merchant/analytics/forecast - revenue forecasting
 export async function GET(request: Request) {
@@ -30,7 +31,7 @@ export async function GET(request: Request) {
     const orders = await prisma.order.findMany({
       where: {
         merchantId: user.merchantId,
-        status: { in: ["PAID", "PROCESSING", "COMPLETED"] as any },
+        status: { in: ["PAID", "PROCESSING", "COMPLETED"] as OrderStatus[] },
         createdAt: { gte: thirtyDaysAgo },
       },
       select: { amount: true, createdAt: true },

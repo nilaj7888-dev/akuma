@@ -32,13 +32,6 @@ export default function NegotiationsPage() {
   const [filter, setFilter] = useState<string>("all");
   const [responding, setResponding] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchNegotiations();
-    // Poll every 3 seconds
-    const interval = setInterval(fetchNegotiations, 3000);
-    return () => clearInterval(interval);
-  }, []);
-
   const fetchNegotiations = async () => {
     try {
       const res = await fetch("/api/merchant/negotiation");
@@ -52,6 +45,13 @@ export default function NegotiationsPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchNegotiations();
+    // Poll every 3 seconds
+    const interval = setInterval(fetchNegotiations, 3000);
+    return () => clearInterval(interval);
+  }, []);
 
   const handleResponse = async (negotiationId: string, decision: "APPROVE" | "REJECT" | "COUNTER", counterPrice?: number) => {
     setResponding(negotiationId);
@@ -208,7 +208,7 @@ export default function NegotiationsPage() {
                               Qty: {negotiation.quantity} units
                             </p>
                           </div>
-                          <Badge variant={getStatusColor(negotiation.status) as any} size="sm">
+                          <Badge variant={getStatusColor(negotiation.status) as "success" | "warning" | "error" | "info" | "amber" | "green"} size="sm">
                             {getStatusLabel(negotiation.status)}
                           </Badge>
                         </div>

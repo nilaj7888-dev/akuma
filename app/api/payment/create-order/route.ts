@@ -138,14 +138,14 @@ export async function POST(request: Request) {
       buyerEmail: negotiation.user.email,
       buyerName: negotiation.user.name,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Order creation error:", error);
 
     return NextResponse.json(
       {
         error: {
           code: "AKUMA_SERVER_ERROR",
-          message: error.message || "Failed to create payment order.",
+          message: (error instanceof Error && error.message) || "Failed to create payment order.",
         },
       },
       { status: 500 }

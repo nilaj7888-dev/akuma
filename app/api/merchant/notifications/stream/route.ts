@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getPrisma } from "@/lib/db";
+import type { NotificationType } from "@prisma/client";
 
 // GET /api/merchant/notifications/stream - server-sent events for real-time notifications
 export async function GET(request: Request) {
@@ -32,12 +33,12 @@ export async function GET(request: Request) {
 
     // Also get recent critical notifications
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const criticalTypes = ["BUYER_INTEREST_NEW", "ORDER_CREATED", "PAYMENT_RECEIVED", "LOW_STOCK"];
+    const criticalTypes: NotificationType[] = ["BUYER_INTEREST_NEW", "ORDER_CREATED", "PAYMENT_RECEIVED", "LOW_STOCK"];
 
     const recentCritical = await prisma.notification.findMany({
       where: {
         merchantId: user.merchantId,
-        type: { in: criticalTypes as any },
+        type: { in: criticalTypes },
         OR: [
           { read: false },
           { createdAt: { gte: twentyFourHoursAgo } },

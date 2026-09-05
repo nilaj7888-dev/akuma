@@ -3,6 +3,34 @@ import { getSession } from "@/lib/auth";
 import { getPrisma } from "@/lib/db";
 import { z } from "zod";
 
+interface WishlistRawRow {
+  id: string;
+  userId: string;
+  productId: string;
+  name: string | null;
+  note: string | null;
+  alertPrice: number | null;
+  alertActive: boolean;
+  createdAt: Date;
+  product_name: string;
+  product_sku: string;
+  product_price: number;
+  avg_rating: number;
+  total_reviews: number;
+  product_merchant_id: string;
+}
+
+interface WishlistRecommendation {
+  id: string;
+  name: string;
+  sku: string;
+  price: number;
+  priceDisplay: string;
+  avgRating: number;
+  totalReviews: number;
+  merchantName: string | undefined;
+}
+
 const wishlistItemSchema = z.object({
   productId: z.string(),
   name: z.string().optional(),
@@ -51,11 +79,11 @@ export async function GET(request: Request) {
       ORDER BY w."createdAt" DESC
       LIMIT ${Math.min(limit || 20, 50)}
       OFFSET ${offset || 0}
-    ` as any[];
+    ` as WishlistRawRow[];
 
     const total = await prisma.wishlist.count({ where: { userId: session.userId } });
 
-    const wishlistWithStatus = wishlistRows.map((item: any) => ({
+    const wishlistWithStatus = wishlistRows.map((item: WishlistRawRow) => ({
       id: item.id,
       userId: item.userId,
       productId: item.productId,
@@ -80,10 +108,10 @@ export async function GET(request: Request) {
     }));
 
     // Get recommendations based on wishlist
-    let recommendations: any[] = [];
+    let recommendations: WishlistRecommendation[] = [];
     if (withRecommendations && wishlistWithStatus.length > 0) {
-      const productIds = wishlistWithStatus.map((item: any) => item.productId);
-      const merchantIds = [...new Set(wishlistWithStatus.map((item: any) => item.product.merchantId))];
+      const productIds = wishlistWithStatus.map((item) => item.productId);
+      const merchantIds = [...new Set(wishlistWithStatus.map((item) => item.product.merchantId))];
 
       if (merchantIds.length > 0) {
         const products = await prisma.product.findMany({
@@ -96,7 +124,7 @@ export async function GET(request: Request) {
           take: 10,
         });
 
-        recommendations = products.map((p: any) => ({
+        recommendations = products.map((p) => ({
           id: p.id,
           name: p.name,
           sku: p.sku,

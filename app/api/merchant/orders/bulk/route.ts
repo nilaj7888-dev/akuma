@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getPrisma } from "@/lib/db";
 import { z } from "zod";
+import type { OrderStatus } from "@prisma/client";
 
 const bulkOperationSchema = z.object({
   action: z.enum(["UPDATE_STATUS", "MARK_PROCESSED", "MARK_COMPLETED"]),
@@ -52,19 +53,19 @@ export async function POST(request: Request) {
     if (action === "UPDATE_STATUS" && parsed.data.status) {
       const result = await prisma.order.updateMany({
         where: { id: { in: parsed.data.orderIds } },
-        data: { status: parsed.data.status as any },
+        data: { status: parsed.data.status as OrderStatus },
       });
       updatedCount = result.count;
     } else if (action === "MARK_PROCESSED") {
       const result = await prisma.order.updateMany({
-        where: { id: { in: parsed.data.orderIds }, status: "PAID" as any },
-        data: { status: "PROCESSING" as any },
+        where: { id: { in: parsed.data.orderIds }, status: "PAID" as OrderStatus },
+        data: { status: "PROCESSING" as OrderStatus },
       });
       updatedCount = result.count;
     } else if (action === "MARK_COMPLETED") {
       const result = await prisma.order.updateMany({
-        where: { id: { in: parsed.data.orderIds }, status: "PROCESSING" as any },
-        data: { status: "COMPLETED" as any },
+        where: { id: { in: parsed.data.orderIds }, status: "PROCESSING" as OrderStatus },
+        data: { status: "COMPLETED" as OrderStatus },
       });
       updatedCount = result.count;
     }

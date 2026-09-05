@@ -73,7 +73,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       );
     }
 
-    let newStatus = negotiation.status;
+    const newStatus = negotiation.status;
     let updatedNegotiation;
 
     if (action === "ACCEPT") {

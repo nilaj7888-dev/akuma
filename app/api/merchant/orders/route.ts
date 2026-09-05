@@ -3,6 +3,7 @@ import { getSession } from "@/lib/auth";
 import { getPrisma } from "@/lib/db";
 import { resolveMerchant } from "@/lib/resolve-merchant";
 import { z } from "zod";
+import type { Prisma, OrderStatus } from "@prisma/client";
 
 const ordersQuerySchema = z.object({
   status: z.string().optional(),
@@ -40,8 +41,8 @@ export async function GET(request: Request) {
 
     const { status, limit, offset } = parsed.data;
 
-    const where: any = { merchantId: merchant.id };
-    if (status) where.status = status;
+    const where: Prisma.OrderWhereInput = { merchantId: merchant.id };
+    if (status) where.status = status as OrderStatus;
 
     const [orders, total] = await Promise.all([
       prisma.order.findMany({

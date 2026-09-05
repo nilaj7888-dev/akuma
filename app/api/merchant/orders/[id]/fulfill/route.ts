@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getPrisma } from "@/lib/db";
+import type { OrderStatus, NotificationType } from "@prisma/client";
 
 // PATCH /api/merchant/orders/[id]/fulfill - update order fulfillment status
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -58,7 +59,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const updated = await prisma.order.update({
       where: { id: resolvedParams.id },
       data: {
-        status: newStatus as any,
+        status: newStatus as OrderStatus,
         updatedAt: new Date(),
       },
       include: { customer: true, items: true, transaction: true },
@@ -100,7 +101,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       await prisma.notification.create({
         data: {
           merchantId: user.merchantId,
-          type: notificationTypeMap[newStatus] as any,
+          type: notificationTypeMap[newStatus] as NotificationType,
           title: titleMap[newStatus],
           message: messageMap[newStatus],
           resourceType: "Order",

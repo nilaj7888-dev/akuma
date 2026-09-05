@@ -1,5 +1,5 @@
 import { getPrisma } from "@/lib/db";
-import type { ExperimentStatus } from "@prisma/client";
+import type { ExperimentStatus, Prisma } from "@prisma/client";
 
 export interface Experiment {
   id: string;
@@ -16,7 +16,7 @@ export interface Experiment {
 export interface ExperimentVariant {
   id: string;
   name: string;
-  config: any;
+  config: Prisma.JsonValue;
   impressions: number;
   conversions: number;
   revenue: number;
@@ -39,7 +39,7 @@ export async function createExperiment(
     name: string;
     description?: string;
     campaignId?: string;
-    variants: Array<{ name: string; config: any }>;
+    variants: Array<{ name: string; config: Prisma.InputJsonValue }>;
   }
 ): Promise<Experiment | null> {
   const prisma = getPrisma();
@@ -231,7 +231,9 @@ export async function analyzeExperiment(
 
 // ── Internal Helpers ───────────────────────────────────────────
 
-function formatExperiment(experiment: any): Experiment {
+type ExperimentWithVariants = Prisma.ExperimentGetPayload<{ include: { variants: true } }>;
+
+function formatExperiment(experiment: ExperimentWithVariants): Experiment {
   return {
     id: experiment.id,
     name: experiment.name,
@@ -245,7 +247,7 @@ function formatExperiment(experiment: any): Experiment {
   };
 }
 
-function formatVariant(variant: any): ExperimentVariant {
+function formatVariant(variant: Prisma.ExperimentVariantGetPayload<object>): ExperimentVariant {
   const conversionRate =
     variant.impressions > 0
       ? (variant.conversions / variant.impressions) * 100

@@ -1,5 +1,5 @@
 import { getPrisma } from "@/lib/db";
-import type { GoalType, GoalStatus } from "@prisma/client";
+import type { GoalType, GoalStatus, Goal } from "@prisma/client";
 
 export interface MerchantGoal {
   id: string;
@@ -219,7 +219,7 @@ export async function suggestGoalImprovements(
 
 // ── Internal Helpers ───────────────────────────────────────────
 
-function formatGoal(goal: any): MerchantGoal {
+function formatGoal(goal: Goal): MerchantGoal {
   const now = new Date();
   const progress = Math.round((goal.currentValue / goal.targetValue) * 100);
   const daysRemaining = Math.max(

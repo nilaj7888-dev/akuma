@@ -4,9 +4,31 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertCircle, Loader, Check, Package } from "lucide-react";
 
+interface RazorpayPaymentResponse {
+  razorpay_order_id: string;
+  razorpay_payment_id: string;
+  razorpay_signature: string;
+}
+
+interface RazorpayOptions {
+  key: string;
+  order_id: string;
+  amount: number;
+  currency: string;
+  name: string;
+  description: string;
+  handler: (response: RazorpayPaymentResponse) => void | Promise<void>;
+  prefill: { contact: string; email: string };
+  theme: { color: string };
+}
+
+interface RazorpayInstance {
+  open: () => void;
+}
+
 declare global {
   interface Window {
-    Razorpay: any;
+    Razorpay: new (options: RazorpayOptions) => RazorpayInstance;
   }
 }
 
@@ -57,19 +79,8 @@ export default function CheckoutPage() {
   const [manualCity, setManualCity] = useState("");
   const [manualState, setManualState] = useState("");
   const [manualPostalCode, setManualPostalCode] = useState("");
-  const sessionTokenRef = useRef(`${Date.now()}_${Math.random().toString(36).slice(2)}`);
+  const [sessionToken] = useState(() => `${Date.now()}_${Math.random().toString(36).slice(2)}`);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    // Load Razorpay script
-    const script = document.createElement("script");
-    script.src = "https://checkout.razorpay.com/v1/checkout.js";
-    script.onload = () => setRazorpayReady(true);
-    document.body.appendChild(script);
-
-    fetchCartItems();
-    fetchAddresses();
-  }, []);
 
   const fetchCartItems = async () => {
     try {
@@ -99,6 +110,17 @@ export default function CheckoutPage() {
     }
   };
 
+  useEffect(() => {
+    // Load Razorpay script
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.onload = () => setRazorpayReady(true);
+    document.body.appendChild(script);
+
+    fetchCartItems();
+    fetchAddresses();
+  }, []);
+
   const searchAddress = (q: string) => {
     setAddressQuery(q);
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
@@ -108,7 +130,7 @@ export default function CheckoutPage() {
     }
     searchDebounceRef.current = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/consumer/addresses/autocomplete?q=${encodeURIComponent(q)}&sessionToken=${sessionTokenRef.current}`);
+        const res = await fetch(`/api/consumer/addresses/autocomplete?q=${encodeURIComponent(q)}&sessionToken=${sessionToken}`);
         if (res.ok) {
           const data = await res.json() as { predictions: Prediction[] };
           setPredictions(data.predictions || []);
@@ -132,7 +154,7 @@ export default function CheckoutPage() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           placeId: prediction.place_id,
-          sessionToken: sessionTokenRef.current,
+          sessionToken: sessionToken,
           name: newAddressName.trim(),
           phone: newAddressPhone.trim(),
           contactConsent: orderContactConsent,
@@ -254,7 +276,7 @@ export default function CheckoutPage() {
         currency: "INR",
         name: "AKUMA Shopping",
         description: `Order for ${items.length} item${items.length !== 1 ? "s" : ""}`,
-        handler: async (response: any) => {
+        handler: async (response: RazorpayPaymentResponse) => {
           // Verify payment
           try {
             const verifyRes = await fetch("/api/consumer/checkout/verify", {
@@ -485,7 +507,7 @@ export default function CheckoutPage() {
                     </div>
                   )}
                   <button type="button" className="address-add-link" onClick={() => setManualEntry(true)} disabled={resolvingAddress}>
-                    Can't find your address? Enter it manually
+                    Can&apos;t find your address? Enter it manually
                   </button>
                 </>
               ) : (

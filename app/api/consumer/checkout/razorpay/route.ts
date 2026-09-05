@@ -47,12 +47,12 @@ export async function POST(request: Request) {
       amount: order.amount,
       currency: order.merchant.currency || "INR",
       receipt: `order_${order.id}`,
-      payment_capture: 1 as any, // Auto-capture
+      payment_capture: true, // Auto-capture
       notes: {
         orderId: order.id,
         merchantId: order.merchantId,
       },
-    }) as any;
+    });
 
     // Update order with Razorpay order ID
     await prisma.order.update({

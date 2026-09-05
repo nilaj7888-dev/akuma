@@ -131,13 +131,13 @@ export async function POST(request: Request) {
             : "No matching buyer demand found at this time.",
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Product creation error:", error);
     return NextResponse.json(
       {
         error: {
           code: "AKUMA_SERVER_ERROR",
-          message: error.message || "Failed to create product.",
+          message: (error instanceof Error && error.message) || "Failed to create product.",
         },
       },
       { status: 500 }

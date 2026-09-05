@@ -13,8 +13,8 @@ async function test() {
         const result = await runAkumaAgent(input);
         console.log("Agent Response:\n", result.content);
         console.log("\nTools Used:", result.toolActivity);
-    } catch (e: any) {
-        console.error("Error:", e.message);
+    } catch (e: unknown) {
+        console.error("Error:", e instanceof Error ? e.message : String(e));
     }
 }
 

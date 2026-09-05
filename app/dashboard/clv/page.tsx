@@ -94,7 +94,7 @@ export default function CLVPage() {
           <FadeIn>
             <p className="eyebrow">CUSTOMER LIFETIME VALUE</p>
             <h1>CLV Analysis</h1>
-            <p className="subhead">Estimated from each customer's real order history: average order value × purchase frequency.</p>
+            <p className="subhead">Estimated from each customer&apos;s real order history: average order value × purchase frequency.</p>
           </FadeIn>
         </div>
 

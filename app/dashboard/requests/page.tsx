@@ -32,10 +32,6 @@ export default function RequestsPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  useEffect(() => {
-    fetchNegotiations();
-  }, []);
-
   const fetchNegotiations = async () => {
     try {
       const res = await fetch("/api/merchant/negotiation");
@@ -50,6 +46,10 @@ export default function RequestsPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchNegotiations();
+  }, []);
 
   const handleDecision = async (decision: "APPROVE" | "REJECT", counterPricePaise?: number) => {
     if (!selected) return;

@@ -185,7 +185,7 @@ export default function PoliciesPage() {
             {isNew && (
               <div className="notice">
                 <div className="notice-icon"><Gauge size={16} /></div>
-                <p>You haven't configured AI policy limits yet. These are the defaults — adjust and save to create your policy.</p>
+                <p>You haven&apos;t configured AI policy limits yet. These are the defaults — adjust and save to create your policy.</p>
               </div>
             )}
             <Card>

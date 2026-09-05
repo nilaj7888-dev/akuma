@@ -32,19 +32,6 @@ export default function DiscoverPage() {
   const [categories, setCategories] = useState<string[]>([]);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    fetchProducts();
-  }, [search, category]);
-
-  // Simple polling to refresh products every 10 seconds
-  // This ensures newly added merchant products appear without manual refresh
-  useEffect(() => {
-    const interval = setInterval(() => {
-      fetchProducts();
-    }, 10000); // Poll every 10 seconds
-    return () => clearInterval(interval);
-  }, [search, category]);
-
   const fetchProducts = async () => {
     setLoading(true);
     try {
@@ -73,6 +60,19 @@ export default function DiscoverPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchProducts();
+  }, [search, category]);
+
+  // Simple polling to refresh products every 10 seconds
+  // This ensures newly added merchant products appear without manual refresh
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchProducts();
+    }, 10000); // Poll every 10 seconds
+    return () => clearInterval(interval);
+  }, [search, category]);
 
   // Pre-fill which products are already saved so the heart shows filled.
   useEffect(() => {

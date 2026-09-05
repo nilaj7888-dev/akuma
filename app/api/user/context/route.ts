@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getPrisma } from "@/lib/db";
+import type { OnboardingContext } from "@/lib/onboarding";
 
 export async function GET() {
   const session = await getSession();
@@ -26,6 +27,6 @@ export async function GET() {
     deliveryRadius: merchant?.deliveryRadius,
     negotiationPolicy: policy?.negotiationPreference,
     businessPriority: policy?.primaryGoal,
-    buyerPriority: (user.onboardingContext as any)?.buyerPriority,
+    buyerPriority: (user.onboardingContext as OnboardingContext | null)?.buyerPriority,
   });
 }

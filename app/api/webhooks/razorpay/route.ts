@@ -1,6 +1,21 @@
 import { NextResponse } from "next/server";
 import { getPrisma } from "@/lib/db";
 import crypto from "node:crypto";
+import type { PrismaClient, Prisma } from "@prisma/client";
+
+interface RazorpayPaymentEntity {
+  id: string;
+  order_id: string;
+  amount: number;
+  currency?: string;
+  error_description?: string;
+}
+
+interface RazorpayWebhookPayload {
+  payment?: {
+    entity?: RazorpayPaymentEntity;
+  };
+}
 
 const RAZORPAY_WEBHOOK_SECRET = process.env.RAZORPAY_WEBHOOK_SECRET;
 
@@ -47,7 +62,7 @@ export async function POST(request: Request) {
       data: {
         eventId: event.id || `fallback_${Date.now()}`,
         eventType: eventType,
-        payload: payload as any,
+        payload: payload as Prisma.InputJsonValue,
         signatureVerified: true,
         processed: false,
       },
@@ -86,7 +101,7 @@ export async function POST(request: Request) {
   }
 }
 
-async function handlePaymentCaptured(prisma: any, payload: any) {
+async function handlePaymentCaptured(prisma: PrismaClient, payload: RazorpayWebhookPayload) {
   const payment = payload.payment?.entity;
   if (!payment || !payment.order_id) {
     console.error("Razorpay webhook: Invalid payment captured event");
@@ -95,7 +110,7 @@ async function handlePaymentCaptured(prisma: any, payload: any) {
 
   // Find order by Razorpay order ID
   const order = await prisma.order.findUnique({
-    where: { razorpayOrderId: payment.order_id },
+    where: { razorpayOrderId: payment.order_id } as Prisma.OrderWhereUniqueInput,
     include: { merchant: true },
   });
 
@@ -169,7 +184,7 @@ async function handlePaymentCaptured(prisma: any, payload: any) {
   console.log(`Razorpay webhook: Payment ${payment.id} captured for order ${order.id}`);
 }
 
-async function handlePaymentFailed(prisma: any, payload: any) {
+async function handlePaymentFailed(prisma: PrismaClient, payload: RazorpayWebhookPayload) {
   const payment = payload.payment?.entity;
   if (!payment || !payment.order_id) {
     console.error("Razorpay webhook: Invalid payment failed event");
@@ -177,7 +192,7 @@ async function handlePaymentFailed(prisma: any, payload: any) {
   }
 
   const order = await prisma.order.findUnique({
-    where: { razorpayOrderId: payment.order_id },
+    where: { razorpayOrderId: payment.order_id } as Prisma.OrderWhereUniqueInput,
   });
 
   if (!order) {
@@ -235,7 +250,7 @@ async function handlePaymentFailed(prisma: any, payload: any) {
   console.log(`Razorpay webhook: Payment ${payment.id} failed for order ${order.id}`);
 }
 
-async function handlePaymentAuthorized(prisma: any, payload: any) {
+async function handlePaymentAuthorized(prisma: PrismaClient, payload: RazorpayWebhookPayload) {
   const payment = payload.payment?.entity;
   if (!payment || !payment.order_id) {
     console.error("Razorpay webhook: Invalid payment authorized event");
@@ -243,7 +258,7 @@ async function handlePaymentAuthorized(prisma: any, payload: any) {
   }
 
   const order = await prisma.order.findUnique({
-    where: { razorpayOrderId: payment.order_id },
+    where: { razorpayOrderId: payment.order_id } as Prisma.OrderWhereUniqueInput,
   });
 
   if (!order) {

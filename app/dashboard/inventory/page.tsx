@@ -83,7 +83,7 @@ export default function InventoryPage() {
     avgMargin: products.length ? Math.round(products.reduce((sum, p) => sum + p.margin, 0) / products.length) : null,
   };
 
-  const getStockStatus = (stock: number) => {
+  const getStockStatus = (stock: number): { color: "error" | "warning" | "success"; label: string } => {
     if (stock === 0) return { color: "error", label: "Out of stock" };
     if (stock < 10) return { color: "warning", label: "Low stock" };
     return { color: "success", label: "In stock" };
@@ -262,7 +262,7 @@ export default function InventoryPage() {
                         <td style={{ padding: "12px", color: "var(--muted)" }}>{product.sku}</td>
                         <td style={{ padding: "12px", color: "var(--ink)" }}>{formatMoney(product.price)}</td>
                         <td style={{ padding: "12px" }}>
-                          <Badge variant={stockStatus.color as any} size="sm">
+                          <Badge variant={stockStatus.color} size="sm">
                             {product.stock}
                           </Badge>
                         </td>

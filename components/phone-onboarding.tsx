@@ -67,8 +67,8 @@ export function PhoneOnboarding({ accountType, onComplete }: { accountType: "MER
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Invalid code");
       finish(data);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
@@ -95,8 +95,8 @@ export function PhoneOnboarding({ accountType, onComplete }: { accountType: "MER
       // delivered returns the generated code. Either way, show it.
       setShownCode(data.pin || data.devCode || "");
       setStep("otp");
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }

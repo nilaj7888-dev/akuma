@@ -15,7 +15,14 @@ export async function PATCH(
     const body = await request.json();
     const { name, description, targetValue, currentValue, status, priority } = body;
 
-    const updates: any = {};
+    const updates: {
+      name?: string;
+      description?: string;
+      targetValue?: number;
+      currentValue?: number;
+      status?: GoalStatus;
+      priority?: number;
+    } = {};
     if (name !== undefined) updates.name = name;
     if (description !== undefined) updates.description = description;
     if (targetValue !== undefined) updates.targetValue = parseInt(targetValue);

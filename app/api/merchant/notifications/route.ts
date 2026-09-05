@@ -3,6 +3,7 @@ import { getSession } from "@/lib/auth";
 import { getPrisma } from "@/lib/db";
 import { resolveMerchant } from "@/lib/resolve-merchant";
 import { z } from "zod";
+import type { Prisma, NotificationType } from "@prisma/client";
 
 const notificationQuerySchema = z.object({
   unreadOnly: z.string().transform(v => v === "true").optional(),
@@ -44,9 +45,9 @@ export async function GET(request: Request) {
     const { unreadOnly, type, limit, offset } = parsed.data;
 
     // Build where clause
-    const where: any = { merchantId: merchant.id };
+    const where: Prisma.NotificationWhereInput = { merchantId: merchant.id };
     if (unreadOnly) where.read = false;
-    if (type) where.type = type;
+    if (type) where.type = type as NotificationType;
 
     // Fetch notifications with pagination
     const [notifications, total] = await Promise.all([

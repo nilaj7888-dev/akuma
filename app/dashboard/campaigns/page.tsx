@@ -82,7 +82,7 @@ export default function CampaignsPage() {
           <FadeIn>
             <p className="eyebrow">CAMPAIGN MANAGER</p>
             <h1>Campaigns</h1>
-            <p className="subhead">Every campaign here started as an AI-proposed opportunity you approved — AKUMA doesn't launch anything on its own.</p>
+            <p className="subhead">Every campaign here started as an AI-proposed opportunity you approved — AKUMA doesn&apos;t launch anything on its own.</p>
           </FadeIn>
           <Button icon={<Sparkles size={16} />} onClick={() => router.push("/dashboard/opportunities")}>
             Review opportunities

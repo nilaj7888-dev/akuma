@@ -1,6 +1,16 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getPrisma } from "@/lib/db";
+import type { NegotiationStatus, Prisma } from "@prisma/client";
+
+interface NegotiationMessage {
+  role: "CUSTOMER" | "MERCHANT" | "AI" | "ACCEPTANCE";
+  content: string;
+  timestamp: string;
+  acceptedBy?: "CUSTOMER" | "MERCHANT";
+  acceptedPrice?: number;
+  suggestedPrice?: number;
+}
 
 export async function POST(
   request: Request,
@@ -42,7 +52,7 @@ export async function POST(
         id: true,
         userId: true,
         merchantId: true,
-        messages: true as any,
+        messages: true,
         status: true,
       },
     });
@@ -68,13 +78,13 @@ export async function POST(
     }
 
     // Get messages array
-    const messages = Array.isArray((negotiation as any).messages)
-      ? (negotiation as any).messages
+    const messages: NegotiationMessage[] = Array.isArray(negotiation.messages)
+      ? (negotiation.messages as unknown as NegotiationMessage[])
       : [];
 
     // Check if other party already accepted
     const otherPartyAccepted = messages.some(
-      (m: any) =>
+      (m: NegotiationMessage) =>
         m.role === "ACCEPTANCE" &&
         m.acceptedBy ===
           (role === "CUSTOMER" ? "MERCHANT" : "CUSTOMER") &&
@@ -82,7 +92,7 @@ export async function POST(
     );
 
     // Add acceptance message
-    const acceptanceMessage = {
+    const acceptanceMessage: NegotiationMessage = {
       role: "ACCEPTANCE",
       content: `${role === "CUSTOMER" ? "Customer" : "Merchant"} accepted ₹${(suggestedPrice / 100).toLocaleString()}/unit`,
       timestamp: new Date().toISOString(),
@@ -94,18 +104,19 @@ export async function POST(
 
     // If both parties accepted, finalize the deal
     if (otherPartyAccepted) {
-      messages.push({
+      const dealConfirmedMessage: NegotiationMessage = {
         role: "AI",
         content: `🎉 Deal confirmed! Both parties agreed on ₹${(suggestedPrice / 100).toLocaleString()}/unit. ${role === "CUSTOMER" ? "You can now proceed to checkout with this price." : "The customer can now checkout with the negotiated price."}`,
         timestamp: new Date().toISOString(),
-      });
+      };
+      messages.push(dealConfirmedMessage);
 
       await prisma.negotiation.update({
         where: { id },
         data: {
-          messages: messages as any,
+          messages: messages as unknown as Prisma.InputJsonValue,
           approvedPrice: suggestedPrice,
-          status: "ACCEPTED" as any,
+          status: "ACCEPTED" as NegotiationStatus,
         },
       });
 
@@ -117,15 +128,16 @@ export async function POST(
     }
 
     // Only one party accepted so far
-    messages.push({
+    const waitingMessage: NegotiationMessage = {
       role: "AI",
       content: `Waiting for ${role === "CUSTOMER" ? "merchant" : "customer"} to accept...`,
       timestamp: new Date().toISOString(),
-    });
+    };
+    messages.push(waitingMessage);
 
     await prisma.negotiation.update({
       where: { id },
-      data: { messages: messages as any },
+      data: { messages: messages as unknown as Prisma.InputJsonValue },
     });
 
     return NextResponse.json({

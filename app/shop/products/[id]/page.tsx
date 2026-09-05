@@ -30,13 +30,6 @@ export default function ProductPage() {
   const [savingSave, setSavingSave] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    if (productId) {
-      fetchProduct();
-      checkSaved();
-    }
-  }, [productId]);
-
   const fetchProduct = async () => {
     try {
       const res = await fetch(`/api/consumer/catalog/${productId}`);
@@ -61,6 +54,13 @@ export default function ProductPage() {
       /* non-blocking */
     }
   };
+
+  useEffect(() => {
+    if (productId) {
+      fetchProduct();
+      checkSaved();
+    }
+  }, [productId]);
 
   const toggleSave = async () => {
     if (!product || savingSave) return;

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getPrisma } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { sendEmail } from "@/lib/email";
+import type { Prisma } from "@prisma/client";
 
 export async function POST(request: Request) {
   const session = await getSession();
@@ -77,7 +78,7 @@ export async function POST(request: Request) {
         resourceType: "NEGOTIATION",
         resourceId: offerId,
         reason: "Merchant accepted buyer offer",
-        input: { negotiationId: offerId, acceptedPrice: updatedNegotiation.approvedPrice } as any,
+        input: { negotiationId: offerId, acceptedPrice: updatedNegotiation.approvedPrice } as Prisma.InputJsonValue,
       },
     });
   } else if (action === "REJECT") {
@@ -97,7 +98,7 @@ export async function POST(request: Request) {
         resourceType: "NEGOTIATION",
         resourceId: offerId,
         reason: reason || "Merchant rejected offer",
-        input: { negotiationId: offerId } as any,
+        input: { negotiationId: offerId } as Prisma.InputJsonValue,
       },
     });
   } else if (action === "COUNTER") {
@@ -124,7 +125,7 @@ export async function POST(request: Request) {
         resourceType: "NEGOTIATION",
         resourceId: offerId,
         reason: "Merchant counter-offered",
-        input: { negotiationId: offerId, counterPrice } as any,
+        input: { negotiationId: offerId, counterPrice } as Prisma.InputJsonValue,
       },
     });
   } else {

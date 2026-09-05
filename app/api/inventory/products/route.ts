@@ -164,13 +164,13 @@ export async function POST(request: Request) {
         margin: product.price > 0 ? Math.round(((product.price - product.cost) / product.price) * 100) : 0,
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Product creation error:", error);
     return NextResponse.json(
       {
         error: {
           code: "SERVER_ERROR",
-          message: error.message || "Failed to create product.",
+          message: (error instanceof Error && error.message) || "Failed to create product.",
         },
       },
       { status: 500 }

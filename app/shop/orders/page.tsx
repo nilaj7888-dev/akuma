@@ -103,7 +103,7 @@ export default function OrdersPage() {
       {orders.length === 0 ? (
         <div className="notice">
           <div className="notice-icon"><Package size={16} /></div>
-          <p>You haven't placed any orders yet. Start shopping with AKUMA to see them here.</p>
+          <p>You haven&apos;t placed any orders yet. Start shopping with AKUMA to see them here.</p>
         </div>
       ) : (
         <div className="orders-list">

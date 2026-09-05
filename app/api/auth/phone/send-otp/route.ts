@@ -57,8 +57,9 @@ export async function POST(request: Request) {
       message: result.delivered ? "OTP sent to email" : "Email delivery unavailable — use the code shown below",
       ...(result.devCode ? { devCode: result.devCode, delivered: false } : {}),
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("OTP send error:", error);
-    return NextResponse.json({ error: error.message || "Server error" }, { status: 500 });
+    const message = (error instanceof Error && error.message) || "Server error";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

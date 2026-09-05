@@ -3,6 +3,7 @@ import { getSession } from "@/lib/auth";
 import { getPrisma } from "@/lib/db";
 import { resolveMerchant } from "@/lib/resolve-merchant";
 import { z } from "zod";
+import type { Prisma } from "@prisma/client";
 
 const policySchema = z.object({
   recommendationsEnabled: z.boolean().optional(),
@@ -43,6 +44,6 @@ export async function PATCH(request: Request) {
   const { prisma, merchant } = await getMerchant(session);
   if (!prisma || !merchant) return NextResponse.json({ error: { code: "AKUMA_DATABASE_REQUIRED", message: "Merchant policy is not configured." } }, { status: 503 });
   const policy = await prisma.policy.upsert({ where: { merchantId: merchant.id }, update: parsed.data, create: { merchantId: merchant.id, allowedActions: [], ...parsed.data } });
-  await prisma.auditLog.create({ data: { merchantId: merchant.id, actorType: "USER", action: "Policy changed", resourceType: "Policy", resourceId: policy.id, output: parsed.data as any } });
+  await prisma.auditLog.create({ data: { merchantId: merchant.id, actorType: "USER", action: "Policy changed", resourceType: "Policy", resourceId: policy.id, output: parsed.data as Prisma.InputJsonValue } });
   return NextResponse.json(policy);
 }

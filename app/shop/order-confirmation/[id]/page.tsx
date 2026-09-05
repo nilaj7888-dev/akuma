@@ -29,12 +29,6 @@ export default function OrderConfirmationPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (params.id) {
-      fetchOrder(params.id as string);
-    }
-  }, [params.id]);
-
   const fetchOrder = async (orderId: string) => {
     try {
       setLoading(true);
@@ -50,6 +44,12 @@ export default function OrderConfirmationPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (params.id) {
+      fetchOrder(params.id as string);
+    }
+  }, [params.id]);
 
   if (loading) {
     return (

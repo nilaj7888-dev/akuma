@@ -27,10 +27,6 @@ export default function CartPage() {
   const [negotiateChecked, setNegotiateChecked] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchCart();
-  }, []);
-
   const fetchCart = async () => {
     try {
       setLoading(true);
@@ -47,6 +43,10 @@ export default function CartPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchCart();
+  }, []);
 
   const updateQuantity = async (cartItemId: string, newQuantity: number) => {
     if (newQuantity < 1) return;

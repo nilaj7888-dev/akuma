@@ -41,7 +41,7 @@ interface Opportunity {
   description: string;
   confidence: number;
   expectedRevenue: number;
-  evidence: any;
+  evidence: Record<string, unknown>;
   createdAt: string;
   status: string;
 }
@@ -202,7 +202,7 @@ export default function DemandMatchingPage() {
                             </div>
                             <h3 style={{ fontSize: "16px", margin: "0 0 4px 0" }}>{match.buyerName}</h3>
                             <p style={{ fontSize: "11px", color: "var(--muted)", margin: 0 }}>
-                              Looking for: "{match.originalProduct.name}"
+                              Looking for: &quot;{match.originalProduct.name}&quot;
                             </p>
                             <p style={{ fontSize: "10px", color: "var(--muted)", margin: "4px 0 0 0" }}>
                               Originally from: {match.originalProduct.merchant}

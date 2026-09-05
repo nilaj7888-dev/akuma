@@ -41,13 +41,6 @@ export default function NegotiationChatPage() {
   const [merchantAccepted, setMerchantAccepted] = useState(false);
   const [suggestedPrice, setSuggestedPrice] = useState<number | null>(null);
 
-  useEffect(() => {
-    if (!negotiationId) return;
-    fetchNegotiation();
-    const interval = setInterval(fetchNegotiation, 2000);
-    return () => clearInterval(interval);
-  }, [negotiationId]);
-
   const fetchNegotiation = async () => {
     try {
       const res = await fetch(`/api/negotiation/${negotiationId}/messages`);
@@ -71,6 +64,13 @@ export default function NegotiationChatPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!negotiationId) return;
+    fetchNegotiation();
+    const interval = setInterval(fetchNegotiation, 2000);
+    return () => clearInterval(interval);
+  }, [negotiationId]);
 
   const handleSendMessage = async () => {
     if (!inputValue.trim() || sending || !negotiationId) return;

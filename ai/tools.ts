@@ -1,5 +1,6 @@
 import { getPrisma } from "@/lib/db";
 import { evaluateGuardrails, type MerchantPolicy } from "@/lib/guardrails";
+import type { Prisma } from "@prisma/client";
 import type { AiTool } from "./llm/groq-client";
 
 // ── Tool Definitions ─────────────────────────────────────────────
@@ -692,7 +693,7 @@ export async function executeAiTool(
     const quantity = (args.quantity as number) ?? 1;
 
     // Build query conditions based on role
-    const whereConditions: any = { active: true };
+    const whereConditions: Prisma.ProductWhereInput = { active: true };
 
     // For merchants only, filter by their own products
     if (role === "MERCHANT" && merchant) {
@@ -985,11 +986,11 @@ export async function executeAiTool(
           merchantEmailSent: product.merchant.email,
         },
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error submitting buyer offer:", error);
       return {
         success: false,
-        error: error.message || "Failed to submit offer. Please try again.",
+        error: error instanceof Error ? error.message : "Failed to submit offer. Please try again.",
       };
     }
   }

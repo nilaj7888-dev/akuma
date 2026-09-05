@@ -115,7 +115,7 @@ export async function POST(request: Request) {
       // Extract negotiationId from receipt metadata
       // First, try to fetch from Razorpay order notes, otherwise fallback to receipt parsing
       const notes = payment.notes as Record<string, string> | undefined;
-      let negotiationId = notes?.negotiationId;
+      const negotiationId = notes?.negotiationId;
 
       if (!negotiationId) {
         // Try to parse from receipt format: rcpt_${negotiationId}
@@ -284,7 +284,7 @@ export async function POST(request: Request) {
     // Other events: acknowledge without processing
     console.log(`[Webhook] Ignoring event: ${event.event}`);
     return NextResponse.json({ status: "ok" });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Webhook handler error:", error);
 
     // Return 500 to signal Razorpay to retry
@@ -292,7 +292,7 @@ export async function POST(request: Request) {
       {
         error: {
           code: "WEBHOOK_ERROR",
-          message: error.message || "Webhook processing failed.",
+          message: (error instanceof Error && error.message) || "Webhook processing failed.",
         },
       },
       { status: 500 }

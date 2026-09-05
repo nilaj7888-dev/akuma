@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getPrisma } from "@/lib/db";
+import type { OrderStatus } from "@prisma/client";
 
 // GET /api/merchant/analytics/overview - merchant analytics overview
 export async function GET(request: Request) {
@@ -32,7 +33,7 @@ export async function GET(request: Request) {
     const orders = await prisma.order.findMany({
       where: {
         merchantId: user.merchantId,
-        status: { in: ["PAID", "PROCESSING", "COMPLETED"] as any },
+        status: { in: ["PAID", "PROCESSING", "COMPLETED"] as OrderStatus[] },
         createdAt: { gte: thirtyDaysAgo },
       },
       select: { amount: true, createdAt: true },
@@ -55,12 +56,18 @@ export async function GET(request: Request) {
       where: {
         order: {
           merchantId: user.merchantId,
-          status: { in: ["PAID", "PROCESSING", "COMPLETED"] as any },
+          status: { in: ["PAID", "PROCESSING", "COMPLETED"] as OrderStatus[] },
           createdAt: { gte: thirtyDaysAgo },
         },
       },
       include: { product: { select: { id: true, name: true, sku: true, price: true } } },
     });
+
+    interface ProductRevenueEntry {
+      product: { id: string; name: string; sku: string; price: number };
+      revenue: number;
+      quantity: number;
+    }
 
     const productRevenue = orderItems.reduce((acc, item) => {
       if (!acc[item.productId]) {
@@ -73,12 +80,12 @@ export async function GET(request: Request) {
       acc[item.productId].revenue += item.total;
       acc[item.productId].quantity += item.quantity;
       return acc;
-    }, {} as Record<string, any>);
+    }, {} as Record<string, ProductRevenueEntry>);
 
     const topProducts = Object.values(productRevenue)
-      .sort((a: any, b: any) => b.revenue - a.revenue)
+      .sort((a, b) => b.revenue - a.revenue)
       .slice(0, 5)
-      .map((p: any) => ({
+      .map((p) => ({
         productId: p.product.id,
         productName: p.product.name,
         revenue: p.revenue,
