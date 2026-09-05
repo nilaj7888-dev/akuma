@@ -8,7 +8,7 @@ import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
-import { formatMoney } from "@/lib/mock-data";
+import { formatMoney } from "@/lib/format";
 
 type Campaign = { id: string; name: string; status: string; type: string; reach: number; conversions: number; revenue: number; startDate: string; endDate: string };
 

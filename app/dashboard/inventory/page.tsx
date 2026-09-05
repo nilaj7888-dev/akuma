@@ -8,7 +8,7 @@ import { Card, CardBody } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
-import { formatMoney } from "@/lib/mock-data";
+import { formatMoney } from "@/lib/format";
 
 type Product = { id: string; sku: string; name: string; category: string; price: number; stock: number; sold: number; margin: number };
 

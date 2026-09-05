@@ -7,7 +7,7 @@ import { MetricTile, MetricGrid } from "@/components/ui/metric-tile";
 import { Card, CardBody } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
-import { formatMoney } from "@/lib/mock-data";
+import { formatMoney } from "@/lib/format";
 
 type Segment = { name: string; count: number; clv: number };
 type CLVAnalysis = { averageCLV: number; topSegmentCLV: number; clvGrowth: number; segments: Segment[] };

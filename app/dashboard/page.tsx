@@ -9,7 +9,7 @@ import { Card, CardBody } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PageTransition, FadeIn, StaggerContainer, StaggerItem } from "@/components/ui/animations";
-import { formatMoney } from "@/lib/mock-data";
+import { formatMoney } from "@/lib/format";
 import { AgentConsole } from "@/components/agent-console";
 
 type Metrics = { totalRevenue: number; orders: number; customers: number; opportunities: number; influencedRevenue: number; actionsExecuted: number; conversionLift: number };

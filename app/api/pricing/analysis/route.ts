@@ -2,12 +2,16 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getPricingOptimization } from "@/lib/pricing";
 import { getPrisma } from "@/lib/db";
+import { resolveMerchant } from "@/lib/resolve-merchant";
 
 type PricingOpportunity = {
+  productId: string;
   product: string;
   currentPrice: number;
   suggestedPrice: number;
-  competitorAvg: number;
+  // No competitor pricing data source exists yet — never fabricate one.
+  // Null until a real competitor-price feed is wired up.
+  competitorAvg: number | null;
   potentialRevenue: number;
 };
 
@@ -33,9 +37,7 @@ export async function GET() {
   if (!prisma) return NextResponse.json(EMPTY_RESPONSE);
 
   try {
-    const merchant = await prisma.merchant.findUnique({
-      where: { email: "demo@nova-electronics.test" },
-    });
+    const merchant = await resolveMerchant(prisma, session);
 
     if (!merchant) return NextResponse.json(EMPTY_RESPONSE);
 
@@ -45,10 +47,11 @@ export async function GET() {
     const opportunities: PricingOpportunity[] = analysis
       .filter((item) => item.recommendation !== "Monitor pricing")
       .map((item) => ({
+        productId: item.id,
         product: item.name,
         currentPrice: item.currentPrice,
         suggestedPrice: item.recommendedPrice,
-        competitorAvg: item.currentPrice * 0.95, // Placeholder: would come from competitor data
+        competitorAvg: null, // No competitor-price feed is connected yet.
         potentialRevenue: item.expectedRevenueImpact,
       }));
 

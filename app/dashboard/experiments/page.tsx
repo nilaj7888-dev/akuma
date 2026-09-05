@@ -8,7 +8,7 @@ import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
-import { formatMoney } from "@/lib/mock-data";
+import { formatMoney } from "@/lib/format";
 
 type Experiment = { id: string; name: string; status: string; variantA: { name: string; conversions: number; visitors: number }; variantB: { name: string; conversions: number; visitors: number }; significance: number; winner: string | null };
 
